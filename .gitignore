@@ -1,0 +1,18 @@
+# Local builds and signing keys
+build/
+*.apk
+*.apks
+*.aab
+*.dex
+*.so
+*.jar
+*.keystore
+*.jks
+local.properties
+.gradle/
+__pycache__/
+*.pyc
+
+# Analysis inputs are never part of the source release
+source-review/
+apk-security-review.md
