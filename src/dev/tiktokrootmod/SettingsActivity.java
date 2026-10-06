@@ -2,18 +2,28 @@ package dev.tiktokrootmod;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.SharedPreferences;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
-import android.util.Base64;
 import android.text.InputType;
-import android.widget.Button;
+import android.util.Base64;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -34,6 +44,18 @@ import java.util.concurrent.TimeUnit;
 import org.json.JSONObject;
 
 public final class SettingsActivity extends Activity {
+    // Bảng màu Material 3 tối, lấy theo LSPosed
+    private static final int BG = 0xFF13151D;
+    private static final int CARD = 0xFF262933;
+    private static final int CARD_HI = 0xFF343A52;
+    private static final int PRIMARY = 0xFFB9C3FF;
+    private static final int ON_PRIMARY = 0xFF1C2B5E;
+    private static final int TEXT = 0xFFE2E2EC;
+    private static final int TEXT_SUB = 0xFF9496A5;
+    private static final int OUTLINE = 0xFF454859;
+    private static final int MATCH = ViewGroup.LayoutParams.MATCH_PARENT;
+    private static final int WRAP = ViewGroup.LayoutParams.WRAP_CONTENT;
+
     private static final ExecutorService SAVES = Executors.newSingleThreadExecutor();
     private static final int PICK_THEME_IMAGE = 701;
     private static final int PICK_LAUNCHER_ICON = 702;
@@ -48,155 +70,378 @@ public final class SettingsActivity extends Activity {
     private EditText regionName;
     private EditText themeColor;
 
+    private FrameLayout content;
+    private final ArrayList<ScrollView> pages = new ArrayList<>();
+    private final ArrayList<FrameLayout> tabPills = new ArrayList<>();
+    private final ArrayList<ImageView> tabIcons = new ArrayList<>();
+    private final ArrayList<TextView> tabLabels = new ArrayList<>();
+
     @Override protected void onCreate(Bundle state) {
+        setTheme(android.R.style.Theme_DeviceDefault_NoActionBar);
         super.onCreate(state);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         prefs = getSharedPreferences(Config.PREFS, 0);
         if (!prefs.contains("hide_ads")) prefs.edit().putBoolean("hide_ads", true).commit();
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
-        layout.setPadding(pad, pad, pad, pad);
-        scroll.addView(layout);
-        heading(layout, "TikGoon");
-        note(layout, "Cài đặt cho TikTok gốc 47.0.3. Sau khi đổi, buộc dừng và mở lại TikTok.");
-        toggle(layout, "Ẩn quảng cáo trong feed", "hide_ads", true);
-        toggle(layout, "Ẩn livestream", "hide_lives", false);
-        toggle(layout, "Ẩn bài ảnh", "hide_photos", false);
-        toggle(layout, "Ẩn story", "hide_stories", false);
-        toggle(layout, "Ẩn mini-series", "hide_series", false);
-        toggle(layout, "Ẩn nội dung trả phí", "hide_paid", false);
-        toggle(layout, "Xóa tham số theo dõi khỏi link được copy", "clean_links", true);
-        toggle(layout, "Giả lập vùng Kazakhstan", "spoof_region", true);
-        toggle(layout, "Cho phép chụp/quay màn hình", "allow_screenshots", true);
-        toggle(layout, "Mở tải ảnh nền hồ sơ", "profile_background", true);
-        heading(layout, "Video và giao diện");
-        toggle(layout, "Luôn hiện thanh tua video", "always_show_seekbar", false);
-        toggle(layout, "Giao diện tối giản (ẩn một số lớp phủ video)", "minimal_ui", false);
-        toggle(layout, "Giảm lưu ảnh OLED (làm mờ, dịch chuyển lớp phủ)", "anti_burnout", false);
-        note(layout, "Khi bật cả hai, Tối giản ẩn lớp phủ nên hiệu ứng làm mờ chỉ thấy rõ khi tắt Tối giản.");
-        Button font = new Button(this);
-        font.setText("Font TikTok: " + prefs.getString("font_family", "default"));
-        font.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Font TikTok")
-                .setItems(new String[]{"Mặc định", "Serif", "Monospace"}, (dialog, which) -> {
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(BG);
+        content = new FrameLayout(this);
+        root.addView(content, new LinearLayout.LayoutParams(MATCH, 0, 1f));
+
+        buildOverview(page("TikGoon"));
+        buildAppearance(page("Giao diện"));
+        buildRegion(page("Vùng và bộ lọc"));
+        buildAdvanced(page("Nâng cao"));
+
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setBackgroundColor(BG);
+        String[] labels = {"Tổng quan", "Giao diện", "Vùng", "Nâng cao"};
+        int[] icons = {android.R.drawable.ic_menu_manage, android.R.drawable.ic_menu_gallery,
+                android.R.drawable.ic_menu_mapmode, android.R.drawable.ic_menu_preferences};
+        for (int i = 0; i < labels.length; i++) addTab(nav, i, labels[i], icons[i]);
+        root.addView(nav, new LinearLayout.LayoutParams(MATCH, WRAP));
+
+        setContentView(root);
+        selectTab(0);
+    }
+
+    // ---------------------------------------------------------------- trang
+
+    private void buildOverview(LinearLayout p) {
+        statusCard(p);
+        LinearLayout info = card(p);
+        row(info, "Ứng dụng đích", "TikTok 47.0.3 (com.ss.android.ugc.trill)");
+        row(info, "Phiên bản module", versionName());
+        row(info, "Quyền root", "Cấp cho TikGoon trong KernelSU khi lưu cài đặt");
+        row(info, "Áp dụng thay đổi", "Sau khi đổi, buộc dừng và mở lại TikTok");
+
+        section(p, "Lọc feed");
+        LinearLayout feed = card(p);
+        toggle(feed, "Ẩn quảng cáo trong feed", null, "hide_ads", true);
+        toggle(feed, "Ẩn livestream", null, "hide_lives", false);
+        toggle(feed, "Ẩn bài ảnh", null, "hide_photos", false);
+        toggle(feed, "Ẩn story", null, "hide_stories", false);
+        toggle(feed, "Ẩn mini-series", null, "hide_series", false);
+        toggle(feed, "Ẩn nội dung trả phí", null, "hide_paid", false);
+
+        section(p, "Chung");
+        LinearLayout general = card(p);
+        toggle(general, "Làm sạch link được copy", "Xóa tham số theo dõi", "clean_links", true);
+        toggle(general, "Giả lập vùng Kazakhstan", "Đổi vùng ở tab Vùng", "spoof_region", true);
+        toggle(general, "Cho phép chụp/quay màn hình", null, "allow_screenshots", true);
+        toggle(general, "Mở tải ảnh nền hồ sơ", null, "profile_background", true);
+    }
+
+    private void buildAppearance(LinearLayout p) {
+        section(p, "Video");
+        LinearLayout video = card(p);
+        toggle(video, "Luôn hiện thanh tua video", null, "always_show_seekbar", false);
+        toggle(video, "Giao diện tối giản", "Ẩn một số lớp phủ video", "minimal_ui", false);
+        toggle(video, "Giảm lưu ảnh OLED", "Làm mờ, dịch chuyển lớp phủ", "anti_burnout", false);
+        note(video, "Khi bật cả hai, Tối giản ẩn lớp phủ nên hiệu ứng làm mờ chỉ thấy rõ khi tắt Tối giản.");
+        LinearLayout fontRow = action(video, "Font TikTok", prefs.getString("font_family", "default"), null);
+        TextView fontSub = (TextView) fontRow.getTag();
+        fontRow.setOnClickListener(v -> dialog().setTitle("Font TikTok")
+                .setItems(new String[]{"Mặc định", "Serif", "Monospace"}, (d, which) -> {
                     String family = new String[]{"default", "serif", "monospace"}[which];
                     prefs.edit().putString("font_family", family).apply();
-                    font.setText("Font TikTok: " + family);
+                    fontSub.setText(family);
                     syncSettings();
                 }).show());
-        layout.addView(font);
-        heading(layout, "Màu và ảnh giao diện");
-        note(layout, "Màu, ảnh hoặc video thay các vùng nền tối, kể cả khung bình luận. Video bài đăng và nút bấm vẫn ở phía trước.");
-        themeColor = textInput(layout, "Màu HEX (#RRGGBB)", "theme_color", "#FF2D55");
-        Button colors = new Button(this);
-        colors.setText("Chọn màu mẫu");
-        colors.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("Màu giao diện")
+
+        section(p, "Màu giao diện");
+        LinearLayout color = card(p);
+        note(color, "Màu, ảnh hoặc video thay các vùng nền tối, kể cả khung bình luận. Video bài đăng và nút bấm vẫn ở phía trước.");
+        themeColor = textInput(color, "Màu HEX (#RRGGBB)", "theme_color", "#FF2D55");
+        action(color, "Chọn màu mẫu", "Hồng, xanh dương, tím, xanh lá, cam, trắng", () -> dialog().setTitle("Màu giao diện")
                 .setItems(new String[]{"Hồng", "Xanh dương", "Tím", "Xanh lá", "Cam", "Trắng"}, (d, which) -> {
                     themeColor.setText(new String[]{"#FF2D55", "#2196F3", "#9C27B0", "#4CAF50", "#FF9800", "#FFFFFF"}[which]);
                     saveThemeColor();
                 }).show());
-        layout.addView(colors);
-        Button saveColor = new Button(this);
-        saveColor.setText("Lưu màu HEX");
-        saveColor.setOnClickListener(v -> saveThemeColor());
-        layout.addView(saveColor);
-        opacity(layout, "Độ mờ màu", "theme_color_opacity", 0);
-        toggle(layout, "Dải màu rainbow trên nền đen", "theme_rainbow", false);
-        Button image = new Button(this);
-        image.setText("Chọn ảnh thay nền đen");
-        image.setOnClickListener(v -> pickImage(PICK_THEME_IMAGE));
-        layout.addView(image);
-        opacity(layout, "Độ mờ ảnh", "theme_image_opacity", 0);
-        Button clearImage = new Button(this);
-        clearImage.setText("Xóa ảnh giao diện");
-        clearImage.setOnClickListener(v -> clearThemeImage());
-        layout.addView(clearImage);
-        Button video = new Button(this);
-        video.setText("Chọn video thay nền tối");
-        video.setOnClickListener(v -> pickVideo());
-        layout.addView(video);
-        opacity(layout, "Độ mờ video nền", "theme_video_opacity", 0);
-        note(layout, "Video nền phát lặp, tắt tiếng. Nên chọn MP4 ngắn để giảm pin và tải máy.");
-        Button clearVideo = new Button(this);
-        clearVideo.setText("Xóa video nền");
-        clearVideo.setOnClickListener(v -> clearThemeVideo());
-        layout.addView(clearVideo);
-        heading(layout, "Biểu tượng TikTok trên MIUI Home");
-        note(layout, "Đổi icon của TikTok đang hiện trên màn hình chính và ngăn ứng dụng; có thể trở về logo gốc.");
-        Button icon = new Button(this);
-        icon.setText("Chọn ảnh đổi icon TikTok");
-        icon.setOnClickListener(v -> pickImage(PICK_LAUNCHER_ICON));
-        layout.addView(icon);
-        Button resetIcon = new Button(this);
-        resetIcon.setText("Về logo TikTok gốc");
-        resetIcon.setOnClickListener(v -> resetLauncherIcon());
-        layout.addView(resetIcon);
-        heading(layout, "Tải media");
-        toggle(layout, "Bỏ watermark khi tải video bằng TikTok", "remove_download_watermark", false);
-        heading(layout, "Tin nhắn");
-        toggle(layout, "Tăng giới hạn người nhận khi chia sẻ", "unlimited_share_recipients", false);
-        toggle(layout, "Bỏ giới hạn ghim chat", "unlimited_pinned_chats", false);
-        heading(layout, "LIVE");
-        toggle(layout, "Tắt tự dịch bình luận LIVE", "disable_live_auto_translate", true);
-        heading(layout, "Vùng giả lập");
-        Button chooseRegion = new Button(this);
-        chooseRegion.setText("Chọn từ 191 quốc gia/vùng");
-        chooseRegion.setOnClickListener(v -> showRegionPicker());
-        layout.addView(chooseRegion);
-        regionIso = textInput(layout, "Mã quốc gia ISO (ví dụ: kz)", "region_iso", "kz");
-        regionOperator = textInput(layout, "Mã nhà mạng MCC/MNC (ví dụ: 40101)", "region_operator", "40101");
-        regionName = textInput(layout, "Tên nhà mạng", "region_operator_name", "Beeline");
-        heading(layout, "Bộ lọc video");
-        likes = number(layout, "Lượt thích tối thiểu (0 = tắt)", "min_likes");
-        views = number(layout, "Lượt xem tối thiểu (0 = tắt)", "min_views");
-        publishTime = number(layout, "Thời điểm đăng tối thiểu, Unix giây (0 = tắt)", "min_publish_time");
-        note(layout, "Từ khóa cần ẩn (ngăn cách bằng dấu phẩy)");
-        filterWords = new EditText(this);
+        action(color, "Lưu màu HEX", null, this::saveThemeColor);
+        opacity(color, "Độ mờ màu", "theme_color_opacity", 0);
+        toggle(color, "Dải màu rainbow trên nền đen", null, "theme_rainbow", false);
+
+        section(p, "Ảnh nền");
+        LinearLayout image = card(p);
+        action(image, "Chọn ảnh thay nền đen", null, () -> pickImage(PICK_THEME_IMAGE));
+        opacity(image, "Độ mờ ảnh", "theme_image_opacity", 0);
+        action(image, "Xóa ảnh giao diện", null, this::clearThemeImage);
+
+        section(p, "Video nền");
+        LinearLayout bgVideo = card(p);
+        action(bgVideo, "Chọn video thay nền tối", null, this::pickVideo);
+        opacity(bgVideo, "Độ mờ video nền", "theme_video_opacity", 0);
+        note(bgVideo, "Video nền phát lặp, tắt tiếng. Nên chọn MP4 ngắn để giảm pin và tải máy.");
+        action(bgVideo, "Xóa video nền", null, this::clearThemeVideo);
+
+        section(p, "Biểu tượng TikTok trên MIUI Home");
+        LinearLayout icon = card(p);
+        note(icon, "Đổi icon của TikTok đang hiện trên màn hình chính và ngăn ứng dụng; có thể trở về logo gốc.");
+        action(icon, "Chọn ảnh đổi icon TikTok", null, () -> pickImage(PICK_LAUNCHER_ICON));
+        action(icon, "Về logo TikTok gốc", null, this::resetLauncherIcon);
+    }
+
+    private void buildRegion(LinearLayout p) {
+        section(p, "Vùng giả lập");
+        LinearLayout region = card(p);
+        action(region, "Chọn từ 191 quốc gia/vùng", "Tự điền mã ISO và nhà mạng", this::showRegionPicker);
+        regionIso = textInput(region, "Mã quốc gia ISO (ví dụ: kz)", "region_iso", "kz");
+        regionOperator = textInput(region, "Mã nhà mạng MCC/MNC (ví dụ: 40101)", "region_operator", "40101");
+        regionName = textInput(region, "Tên nhà mạng", "region_operator_name", "Beeline");
+
+        section(p, "Bộ lọc video");
+        LinearLayout filter = card(p);
+        likes = number(filter, "Lượt thích tối thiểu (0 = tắt)", "min_likes");
+        views = number(filter, "Lượt xem tối thiểu (0 = tắt)", "min_views");
+        publishTime = number(filter, "Thời điểm đăng tối thiểu, Unix giây (0 = tắt)", "min_publish_time");
+        TextView wordsLabel = text("Từ khóa cần ẩn (ngăn cách bằng dấu phẩy)", 14, TEXT_SUB);
+        wordsLabel.setPadding(dp(20), dp(12), dp(20), dp(6));
+        filter.addView(wordsLabel);
+        filterWords = styledInput(filter);
         filterWords.setSingleLine(false);
+        filterWords.setMinLines(2);
+        filterWords.setGravity(Gravity.TOP | Gravity.START);
         filterWords.setText(prefs.getString("filter_words", ""));
-        layout.addView(filterWords);
-        Button save = new Button(this);
-        save.setText("Lưu cài đặt");
+
+        TextView save = text("Lưu cài đặt", 16, ON_PRIMARY);
+        save.setTypeface(Typeface.DEFAULT_BOLD);
+        save.setGravity(Gravity.CENTER);
+        save.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33000000), round(PRIMARY, 28), null));
         save.setOnClickListener(v -> saveFields());
-        layout.addView(save);
-        note(layout, "Chưa hỗ trợ tải ảnh/âm thanh/sticker, chọn chất lượng và tự gửi streak. Giao diện cần thử trên TikTok 47.0.3.");
-        setContentView(scroll);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, dp(56));
+        lp.setMargins(dp(16), dp(8), dp(16), dp(8));
+        p.addView(save, lp);
     }
 
-    private void heading(LinearLayout layout, String text) {
+    private void buildAdvanced(LinearLayout p) {
+        section(p, "Tải media");
+        LinearLayout media = card(p);
+        toggle(media, "Bỏ watermark khi tải video", "Dùng nút tải sẵn có của TikTok", "remove_download_watermark", false);
+
+        section(p, "Tin nhắn");
+        LinearLayout msg = card(p);
+        toggle(msg, "Tăng giới hạn người nhận khi chia sẻ", null, "unlimited_share_recipients", false);
+        toggle(msg, "Bỏ giới hạn ghim chat", null, "unlimited_pinned_chats", false);
+
+        section(p, "LIVE");
+        LinearLayout live = card(p);
+        toggle(live, "Tắt tự dịch bình luận LIVE", null, "disable_live_auto_translate", true);
+
+        LinearLayout foot = card(p);
+        note(foot, "Chưa hỗ trợ tải ảnh/âm thanh/sticker, chọn chất lượng và tự gửi streak. Giao diện cần thử trên TikTok 47.0.3.");
+    }
+
+    // ------------------------------------------------------- điều hướng dưới
+
+    private void addTab(LinearLayout nav, int index, String label, int iconRes) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER_HORIZONTAL);
+        item.setPadding(0, dp(12), 0, dp(14));
+        FrameLayout pill = new FrameLayout(this);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        FrameLayout.LayoutParams ip = new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER);
+        pill.addView(icon, ip);
+        item.addView(pill, new LinearLayout.LayoutParams(dp(64), dp(32)));
+        TextView name = text(label, 12, TEXT_SUB);
+        name.setGravity(Gravity.CENTER);
+        name.setPadding(0, dp(4), 0, 0);
+        item.addView(name, new LinearLayout.LayoutParams(WRAP, WRAP));
+        item.setOnClickListener(v -> selectTab(index));
+        nav.addView(item, new LinearLayout.LayoutParams(0, WRAP, 1f));
+        tabPills.add(pill);
+        tabIcons.add(icon);
+        tabLabels.add(name);
+    }
+
+    private void selectTab(int selected) {
+        for (int i = 0; i < pages.size(); i++) {
+            boolean on = i == selected;
+            pages.get(i).setVisibility(on ? View.VISIBLE : View.GONE);
+            tabPills.get(i).setBackground(on ? round(CARD_HI, 16) : null);
+            tabIcons.get(i).setColorFilter(on ? TEXT : TEXT_SUB, PorterDuff.Mode.SRC_IN);
+            tabLabels.get(i).setTextColor(on ? TEXT : TEXT_SUB);
+            tabLabels.get(i).setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
+        }
+    }
+
+    // ------------------------------------------------------ thành phần giao diện
+
+    private int dp(int value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private GradientDrawable round(int color, int radiusDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(radiusDp));
+        return drawable;
+    }
+
+    private TextView text(String value, float sp, int color) {
         TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextSize(22);
-        view.setPadding(0, 12, 0, 8);
-        layout.addView(view);
+        view.setText(value);
+        view.setTextSize(sp);
+        view.setTextColor(color);
+        return view;
     }
 
-    private void note(LinearLayout layout, String text) {
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setPadding(0, 0, 0, 12);
-        layout.addView(view);
+    private AlertDialog.Builder dialog() {
+        return new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert);
     }
 
-    private void toggle(LinearLayout layout, String label, String key, boolean fallback) {
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception error) {
+            return "0.8.6";
+        }
+    }
+
+    private LinearLayout page(String title) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        scroll.setFillViewport(false);
+        LinearLayout column = new LinearLayout(this);
+        column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(0, 0, 0, dp(24));
+        scroll.addView(column, new ScrollView.LayoutParams(MATCH, WRAP));
+        TextView heading = text(title, 40, TEXT);
+        heading.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
+        heading.setPadding(dp(32), dp(56), dp(32), dp(24));
+        column.addView(heading);
+        content.addView(scroll, new FrameLayout.LayoutParams(MATCH, MATCH));
+        pages.add(scroll);
+        return column;
+    }
+
+    private void statusCard(LinearLayout parent) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setBackground(round(CARD_HI, 28));
+        box.setPadding(dp(24), dp(22), dp(24), dp(22));
+
+        TextView check = text("✓", 18, CARD_HI);
+        check.setTypeface(Typeface.DEFAULT_BOLD);
+        check.setGravity(Gravity.CENTER);
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(0xFFC2C6E0);
+        check.setBackground(circle);
+        box.addView(check, new LinearLayout.LayoutParams(dp(34), dp(34)));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.addView(text("Sẵn sàng", 20, 0xFFC9CCE4));
+        col.addView(text(versionName(), 15, TEXT_SUB));
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, WRAP, 1f);
+        cp.setMargins(dp(20), 0, dp(12), 0);
+        box.addView(col, cp);
+
+        TextView badge = text("Xposed 82", 14, ON_PRIMARY);
+        badge.setPadding(dp(12), dp(5), dp(12), dp(5));
+        badge.setBackground(round(0xFFC6CCF5, 8));
+        box.addView(badge);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
+        lp.setMargins(dp(16), 0, dp(16), dp(12));
+        parent.addView(box, lp);
+    }
+
+    private LinearLayout card(LinearLayout parent) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackground(round(CARD, 26));
+        box.setClipToOutline(true);
+        box.setPadding(0, dp(8), 0, dp(8));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
+        lp.setMargins(dp(16), 0, dp(16), dp(10));
+        parent.addView(box, lp);
+        return box;
+    }
+
+    private void section(LinearLayout parent, String label) {
+        TextView view = text(label, 14, PRIMARY);
+        view.setTypeface(Typeface.DEFAULT_BOLD);
+        view.setPadding(dp(32), dp(18), dp(32), dp(8));
+        parent.addView(view);
+    }
+
+    private void note(LinearLayout card, String value) {
+        TextView view = text(value, 14, TEXT_SUB);
+        view.setPadding(dp(20), dp(10), dp(20), dp(10));
+        card.addView(view);
+    }
+
+    /** Một dòng tiêu đề + mô tả; TextView mô tả (nếu có) nằm trong tag của dòng. */
+    private LinearLayout row(LinearLayout card, String title, String sub) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(20), dp(14), dp(20), dp(14));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.addView(text(title, 17, TEXT));
+        if (sub != null) {
+            TextView subView = text(sub, 14, TEXT_SUB);
+            subView.setPadding(0, dp(2), 0, 0);
+            col.addView(subView);
+            row.setTag(subView);
+        }
+        row.addView(col, new LinearLayout.LayoutParams(0, WRAP, 1f));
+        card.addView(row, new LinearLayout.LayoutParams(MATCH, WRAP));
+        return row;
+    }
+
+    private void pressable(View view, Runnable action) {
+        view.setBackground(new RippleDrawable(ColorStateList.valueOf(0x28FFFFFF), null,
+                new ColorDrawable(Color.WHITE)));
+        if (action != null) view.setOnClickListener(v -> action.run());
+    }
+
+    private LinearLayout action(LinearLayout card, String title, String sub, Runnable action) {
+        LinearLayout row = row(card, title, sub);
+        TextView chevron = text("›", 26, TEXT_SUB);
+        row.addView(chevron);
+        pressable(row, action);
+        return row;
+    }
+
+    private void toggle(LinearLayout card, String title, String sub, String key, boolean fallback) {
+        LinearLayout row = row(card, title, sub);
         Switch control = new Switch(this);
-        control.setText(label);
+        int[][] states = {{android.R.attr.state_checked}, {}};
+        control.setThumbTintList(new ColorStateList(states, new int[]{ON_PRIMARY, TEXT_SUB}));
+        control.setTrackTintList(new ColorStateList(states, new int[]{PRIMARY, OUTLINE}));
         control.setChecked(prefs.getBoolean(key, fallback));
-        control.setPadding(0, 8, 0, 8);
         control.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(key, checked).apply();
             syncSettings();
         });
-        layout.addView(control);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP, WRAP);
+        lp.setMargins(dp(12), 0, 0, 0);
+        row.addView(control, lp);
+        pressable(row, control::toggle);
     }
 
-    private void opacity(LinearLayout layout, String label, String key, int fallback) {
-        TextView value = new TextView(this);
-        value.setText(label + ": " + prefs.getInt(key, fallback) + "%");
-        layout.addView(value);
+    private void opacity(LinearLayout card, String label, String key, int fallback) {
+        TextView value = text(label + ": " + prefs.getInt(key, fallback) + "%", 17, TEXT);
+        value.setPadding(dp(20), dp(14), dp(20), dp(4));
+        card.addView(value);
         SeekBar seek = new SeekBar(this);
         seek.setMax(80);
         seek.setProgress(prefs.getInt(key, fallback));
+        seek.setProgressTintList(ColorStateList.valueOf(PRIMARY));
+        seek.setThumbTintList(ColorStateList.valueOf(PRIMARY));
+        seek.setProgressBackgroundTintList(ColorStateList.valueOf(OUTLINE));
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 value.setText(label + ": " + progress + "%");
@@ -207,8 +452,51 @@ public final class SettingsActivity extends Activity {
                 syncSettings();
             }
         });
-        layout.addView(seek);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
+        lp.setMargins(dp(8), 0, dp(8), dp(8));
+        card.addView(seek, lp);
     }
+
+    private EditText styledInput(LinearLayout card) {
+        EditText input = new EditText(this);
+        input.setTextColor(TEXT);
+        input.setHintTextColor(TEXT_SUB);
+        input.setTextSize(16);
+        GradientDrawable bg = round(0xFF1C1E27, 16);
+        bg.setStroke(dp(1), OUTLINE);
+        input.setBackground(bg);
+        input.setPadding(dp(16), dp(12), dp(16), dp(12));
+        input.setOnFocusChangeListener((v, focused) ->
+                bg.setStroke(dp(focused ? 2 : 1), focused ? PRIMARY : OUTLINE));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(MATCH, WRAP);
+        lp.setMargins(dp(16), 0, dp(16), dp(8));
+        card.addView(input, lp);
+        return input;
+    }
+
+    private EditText number(LinearLayout card, String label, String key) {
+        TextView title = text(label, 14, TEXT_SUB);
+        title.setPadding(dp(20), dp(12), dp(20), dp(6));
+        card.addView(title);
+        EditText input = styledInput(card);
+        input.setHint("0");
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setSingleLine(true);
+        input.setText(Long.toString(prefs.getLong(key, 0)));
+        return input;
+    }
+
+    private EditText textInput(LinearLayout card, String label, String key, String fallback) {
+        TextView title = text(label, 14, TEXT_SUB);
+        title.setPadding(dp(20), dp(12), dp(20), dp(6));
+        card.addView(title);
+        EditText input = styledInput(card);
+        input.setSingleLine(true);
+        input.setText(prefs.getString(key, fallback));
+        return input;
+    }
+
+    // ------------------------------------------------------- logic gốc (giữ nguyên)
 
     private void saveThemeColor() {
         String color = themeColor.getText().toString().trim().toUpperCase(java.util.Locale.ROOT);
@@ -382,26 +670,6 @@ public final class SettingsActivity extends Activity {
         });
     }
 
-    private EditText number(LinearLayout layout, String label, String key) {
-        note(layout, label);
-        EditText input = new EditText(this);
-        input.setHint("0");
-        input.setInputType(InputType.TYPE_CLASS_NUMBER);
-        input.setSingleLine(true);
-        input.setText(Long.toString(prefs.getLong(key, 0)));
-        layout.addView(input);
-        return input;
-    }
-
-    private EditText textInput(LinearLayout layout, String label, String key, String fallback) {
-        note(layout, label);
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setText(prefs.getString(key, fallback));
-        layout.addView(input);
-        return input;
-    }
-
     private void saveFields() {
         try {
             long minLikes = parse(likes);
@@ -447,7 +715,7 @@ public final class SettingsActivity extends Activity {
         }
         String[] names = new String[regions.size()];
         for (int i = 0; i < names.length; i++) names[i] = regions.get(i)[0];
-        new AlertDialog.Builder(this).setTitle("Chọn nước giả lập")
+        dialog().setTitle("Chọn nước giả lập")
                 .setItems(names, (dialog, which) -> {
                     String[] selected = regions.get(which);
                     regionIso.setText(selected[1]);
