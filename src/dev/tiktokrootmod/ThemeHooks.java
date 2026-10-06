@@ -32,7 +32,8 @@ final class ThemeHooks {
     private static final WeakHashMap<View, Boolean> THEMED = new WeakHashMap<>();
     private static final WeakHashMap<FrameLayout, Boolean> COMMENT_THEMED = new WeakHashMap<>();
     private static Bitmap wallpaper;
-    private static boolean imageChecked;
+    private static long imageLastModified = Long.MIN_VALUE;
+    private static long imageLength = -1L;
     private static int themedCount;
     private ThemeHooks() {}
 
@@ -155,11 +156,22 @@ final class ThemeHooks {
                 Color.green(color) <= 42 && Color.blue(color) <= 42;
     }
 
-    private static Bitmap loadImage() {
-        if (imageChecked || Config.THEME_IMAGE_OPACITY == 0) return wallpaper;
-        imageChecked = true;
+    private static synchronized Bitmap loadImage() {
+        if (Config.THEME_IMAGE_OPACITY == 0) return wallpaper;
         File file = new File(IMAGE_PATH);
-        if (!file.isFile()) return null;
+        if (!file.isFile()) {
+            if (wallpaper != null) {
+                try { wallpaper.recycle(); } catch (Throwable ignored) { }
+                wallpaper = null;
+            }
+            imageLastModified = Long.MIN_VALUE;
+            imageLength = -1L;
+            return null;
+        }
+        long modified = file.lastModified();
+        long length = file.length();
+        if (wallpaper != null && modified == imageLastModified && length == imageLength)
+            return wallpaper;
         BitmapFactory.Options bounds = new BitmapFactory.Options();
         bounds.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(IMAGE_PATH, bounds);
@@ -168,7 +180,15 @@ final class ThemeHooks {
         options.inSampleSize = 1;
         while (Math.max(bounds.outWidth, bounds.outHeight) / options.inSampleSize > 2048)
             options.inSampleSize *= 2;
-        wallpaper = BitmapFactory.decodeFile(IMAGE_PATH, options);
+        Bitmap replacement = BitmapFactory.decodeFile(IMAGE_PATH, options);
+        if (replacement == null) return null;
+        Bitmap old = wallpaper;
+        wallpaper = replacement;
+        imageLastModified = modified;
+        imageLength = length;
+        if (old != null && old != replacement) {
+            try { old.recycle(); } catch (Throwable ignored) { }
+        }
         return wallpaper;
     }
 
