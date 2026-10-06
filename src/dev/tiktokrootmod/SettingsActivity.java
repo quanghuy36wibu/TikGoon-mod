@@ -96,6 +96,7 @@ public final class SettingsActivity extends Activity {
     // Trạng thái trực tiếp
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int tick;
+    private final Runnable restartTask = this::restartTikTok;
     private volatile boolean rootChecking;
     private StatusRow stModule, stRoot, stTikTok, stHook, stConfig;
     private TextView liveUpdated, summaryIcon, summaryTitle, summarySub;
@@ -175,6 +176,9 @@ public final class SettingsActivity extends Activity {
         stConfig = statusRow(live, "Cấu hình đồng bộ", null);
         LinearLayout monitor = toggle(live, "Theo dõi trực tiếp", "Quét root mỗi 10 giây", "live_monitor", true, false);
         liveUpdated = (TextView) monitor.getTag();
+        toggle(live, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
+                "auto_restart", false, false);
+        action(live, "Khởi động lại TikTok ngay", "Buộc dừng rồi mở lại bằng root", this::confirmRestart);
         note(live, "Sau khi đổi cài đặt, buộc dừng và mở lại TikTok. Chạm vào dòng Quyền root để kiểm tra lại ngay. KernelSU có thể hiện thông báo mỗi lần quét.");
 
         section(p, "Lọc feed");
@@ -661,6 +665,36 @@ public final class SettingsActivity extends Activity {
         });
     }
 
+    private void confirmRestart() {
+        dialog().setTitle("Khởi động lại TikTok?")
+                .setMessage("TikTok sẽ bị buộc dừng rồi mở lại. Video đang tải lên hoặc đang soạn có thể bị mất.")
+                .setPositiveButton("Khởi động lại", (d, w) -> restartTikTok())
+                .setNegativeButton("Hủy", null).show();
+    }
+
+    /** Buộc dừng TikTok rồi mở lại bằng root để module nạp cài đặt mới. */
+    private void restartTikTok() {
+        Toast.makeText(this, "Đang khởi động lại TikTok…", Toast.LENGTH_SHORT).show();
+        ROOT.execute(() -> {
+            boolean success = false;
+            try {
+                Process process = new ProcessBuilder("su", "-c",
+                        "am force-stop " + TIKTOK + "; sleep 1; monkey -p " + TIKTOK +
+                                " -c android.intent.category.LAUNCHER 1")
+                        .redirectErrorStream(true).start();
+                if (process.waitFor(30, TimeUnit.SECONDS)) success = process.exitValue() == 0;
+                else process.destroy();
+            } catch (Exception ignored) { }
+            final boolean done = success;
+            runOnUiThread(() -> {
+                Toast.makeText(this, done ? "Đã khởi động lại TikTok." :
+                        "Không khởi động lại được. Kiểm tra quyền root và việc TikTok đã được cài.",
+                        Toast.LENGTH_LONG).show();
+                refreshRoot();
+            });
+        });
+    }
+
     private boolean sameSettings(String a, String b) {
         try {
             JSONObject x = new JSONObject(new String(Base64.decode(a, Base64.DEFAULT), "UTF-8"));
@@ -1107,10 +1141,16 @@ public final class SettingsActivity extends Activity {
                 } catch (Exception ignored) { }
                 final boolean success = saved;
                 runOnUiThread(() -> {
+                    boolean auto = success && prefs.getBoolean("auto_restart", false);
                     Toast.makeText(this,
-                            success ? "Đã lưu; mở lại TikTok để áp dụng." :
+                            success ? (auto ? "Đã lưu; TikTok sẽ tự khởi động lại sau 3 giây." :
+                                    "Đã lưu; mở lại TikTok để áp dụng.") :
                                     "Chưa lưu được. Hãy cấp quyền root cho TikGoon trong KernelSU.",
                             Toast.LENGTH_LONG).show();
+                    if (auto) {
+                        handler.removeCallbacks(restartTask);
+                        handler.postDelayed(restartTask, 3000);
+                    }
                     if (success) rootState = 1;
                     renderAll();
                 });
