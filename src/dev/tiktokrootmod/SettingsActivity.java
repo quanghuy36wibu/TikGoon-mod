@@ -3,18 +3,26 @@ package dev.tiktokrootmod;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
 import android.graphics.PorterDuff;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.text.InputType;
 import android.util.Base64;
 import android.view.Gravity;
@@ -23,7 +31,6 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
@@ -36,7 +43,11 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -53,10 +64,16 @@ public final class SettingsActivity extends Activity {
     private static final int TEXT = 0xFFE2E2EC;
     private static final int TEXT_SUB = 0xFF9496A5;
     private static final int OUTLINE = 0xFF454859;
+    private static final int OK = 0xFF7DDC95;
+    private static final int BAD = 0xFFFF8A80;
+    private static final int WARN = 0xFFFFD166;
     private static final int MATCH = ViewGroup.LayoutParams.MATCH_PARENT;
     private static final int WRAP = ViewGroup.LayoutParams.WRAP_CONTENT;
 
     private static final ExecutorService SAVES = Executors.newSingleThreadExecutor();
+    private static final ExecutorService ROOT = Executors.newSingleThreadExecutor();
+    private static final String TIKTOK = "com.ss.android.ugc.trill";
+    private static final String STATUS_FILE = "/data/user/0/" + TIKTOK + "/files/tiktokrootmod_status";
     private static final int PICK_THEME_IMAGE = 701;
     private static final int PICK_LAUNCHER_ICON = 702;
     private static final int PICK_THEME_VIDEO = 703;
@@ -73,8 +90,45 @@ public final class SettingsActivity extends Activity {
     private FrameLayout content;
     private final ArrayList<ScrollView> pages = new ArrayList<>();
     private final ArrayList<FrameLayout> tabPills = new ArrayList<>();
-    private final ArrayList<ImageView> tabIcons = new ArrayList<>();
+    private final ArrayList<IconView> tabIcons = new ArrayList<>();
     private final ArrayList<TextView> tabLabels = new ArrayList<>();
+
+    // Trạng thái trực tiếp
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private int tick;
+    private volatile boolean rootChecking;
+    private StatusRow stModule, stRoot, stTikTok, stHook, stConfig;
+    private TextView liveUpdated, summaryIcon, summaryTitle, summarySub;
+    private String rootManager = "";
+    private int rootState;            // 0 đang kiểm tra, 1 đã cấp, 2 không có
+    private String rootVersion = "", rootInfo = "", tiktokPid = "", statusPid = "";
+    private long statusLoaded;
+    private boolean statusExists, statusOk;
+
+    /** Được Xposed hook trong tiến trình của chính module để trả về số API. Mặc định 0 = chưa kích hoạt. */
+    static int xposedApiVersion() { return 0; }
+
+    private final Runnable ticker = new Runnable() {
+        @Override public void run() {
+            renderAll();
+            tick++;
+            if (tick % 5 == 0 && prefs.getBoolean("live_monitor", true)) refreshRoot();
+            handler.postDelayed(this, 2000);
+        }
+    };
+
+    @Override protected void onResume() {
+        super.onResume();
+        handler.removeCallbacks(ticker);
+        tick = 0;
+        ticker.run();
+        refreshRoot();
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(ticker);
+    }
 
     @Override protected void onCreate(Bundle state) {
         setTheme(android.R.style.Theme_DeviceDefault_NoActionBar);
@@ -85,6 +139,7 @@ public final class SettingsActivity extends Activity {
         prefs = getSharedPreferences(Config.PREFS, 0);
         if (!prefs.contains("hide_ads")) prefs.edit().putBoolean("hide_ads", true).commit();
 
+        rootManager = detectRootManager();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
@@ -100,9 +155,7 @@ public final class SettingsActivity extends Activity {
         nav.setOrientation(LinearLayout.HORIZONTAL);
         nav.setBackgroundColor(BG);
         String[] labels = {"Tổng quan", "Giao diện", "Vùng", "Nâng cao"};
-        int[] icons = {android.R.drawable.ic_menu_manage, android.R.drawable.ic_menu_gallery,
-                android.R.drawable.ic_menu_mapmode, android.R.drawable.ic_menu_preferences};
-        for (int i = 0; i < labels.length; i++) addTab(nav, i, labels[i], icons[i]);
+        for (int i = 0; i < labels.length; i++) addTab(nav, i, labels[i]);
         root.addView(nav, new LinearLayout.LayoutParams(MATCH, WRAP));
 
         setContentView(root);
@@ -113,11 +166,16 @@ public final class SettingsActivity extends Activity {
 
     private void buildOverview(LinearLayout p) {
         statusCard(p);
-        LinearLayout info = card(p);
-        row(info, "Ứng dụng đích", "TikTok 47.0.3 (com.ss.android.ugc.trill)");
-        row(info, "Phiên bản module", versionName());
-        row(info, "Quyền root", "Cấp cho TikGoon trong KernelSU khi lưu cài đặt");
-        row(info, "Áp dụng thay đổi", "Sau khi đổi, buộc dừng và mở lại TikTok");
+        section(p, "Trạng thái trực tiếp");
+        LinearLayout live = card(p);
+        stModule = statusRow(live, "Module LSPosed", null);
+        stRoot = statusRow(live, "Quyền root", this::refreshRoot);
+        stTikTok = statusRow(live, "TikTok", null);
+        stHook = statusRow(live, "Hook trong TikTok", null);
+        stConfig = statusRow(live, "Cấu hình đồng bộ", null);
+        LinearLayout monitor = toggle(live, "Theo dõi trực tiếp", "Quét root mỗi 10 giây", "live_monitor", true, false);
+        liveUpdated = (TextView) monitor.getTag();
+        note(live, "Sau khi đổi cài đặt, buộc dừng và mở lại TikTok. Chạm vào dòng Quyền root để kiểm tra lại ngay. KernelSU có thể hiện thông báo mỗi lần quét.");
 
         section(p, "Lọc feed");
         LinearLayout feed = card(p);
@@ -238,16 +296,14 @@ public final class SettingsActivity extends Activity {
 
     // ------------------------------------------------------- điều hướng dưới
 
-    private void addTab(LinearLayout nav, int index, String label, int iconRes) {
+    private void addTab(LinearLayout nav, int index, String label) {
         LinearLayout item = new LinearLayout(this);
         item.setOrientation(LinearLayout.VERTICAL);
         item.setGravity(Gravity.CENTER_HORIZONTAL);
         item.setPadding(0, dp(12), 0, dp(14));
         FrameLayout pill = new FrameLayout(this);
-        ImageView icon = new ImageView(this);
-        icon.setImageResource(iconRes);
-        FrameLayout.LayoutParams ip = new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER);
-        pill.addView(icon, ip);
+        IconView icon = new IconView(this, index);
+        pill.addView(icon, new FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER));
         item.addView(pill, new LinearLayout.LayoutParams(dp(64), dp(32)));
         TextView name = text(label, 12, TEXT_SUB);
         name.setGravity(Gravity.CENTER);
@@ -265,9 +321,67 @@ public final class SettingsActivity extends Activity {
             boolean on = i == selected;
             pages.get(i).setVisibility(on ? View.VISIBLE : View.GONE);
             tabPills.get(i).setBackground(on ? round(CARD_HI, 16) : null);
-            tabIcons.get(i).setColorFilter(on ? TEXT : TEXT_SUB, PorterDuff.Mode.SRC_IN);
+            tabIcons.get(i).setColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTextColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
+        }
+    }
+
+    /** Icon tab tự vẽ, không phụ thuộc icon hệ thống. */
+    private static final class IconView extends View {
+        private final int type;
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF box = new RectF();
+        private int color = TEXT_SUB;
+
+        IconView(Context context, int type) {
+            super(context);
+            this.type = type;
+            paint.setStrokeCap(Paint.Cap.ROUND);
+            paint.setStrokeJoin(Paint.Join.ROUND);
+        }
+
+        void setColor(int value) {
+            color = value;
+            invalidate();
+        }
+
+        private void rect(Canvas c, float s, float l, float t, float r, float b) {
+            box.set(l * s, t * s, r * s, b * s);
+            c.drawRoundRect(box, 2.5f * s, 2.5f * s, paint);
+        }
+
+        @Override protected void onDraw(Canvas c) {
+            float s = Math.min(getWidth(), getHeight()) / 24f;
+            paint.setColor(color);
+            paint.setStrokeWidth(2f * s);
+            paint.setStyle(Paint.Style.STROKE);
+            if (type == 0) {                       // Tổng quan: lưới 2x2
+                rect(c, s, 3, 3, 10, 10);
+                rect(c, s, 14, 3, 21, 10);
+                rect(c, s, 3, 14, 10, 21);
+                rect(c, s, 14, 14, 21, 21);
+            } else if (type == 1) {                // Giao diện: bảng màu
+                c.drawCircle(12 * s, 12 * s, 9 * s, paint);
+                paint.setStyle(Paint.Style.FILL);
+                c.drawCircle(8 * s, 10 * s, 1.5f * s, paint);
+                c.drawCircle(12 * s, 7.5f * s, 1.5f * s, paint);
+                c.drawCircle(16 * s, 10 * s, 1.5f * s, paint);
+                c.drawCircle(9 * s, 15.5f * s, 1.5f * s, paint);
+            } else if (type == 2) {                // Vùng: quả địa cầu
+                c.drawCircle(12 * s, 12 * s, 9 * s, paint);
+                box.set(8 * s, 3 * s, 16 * s, 21 * s);
+                c.drawOval(box, paint);
+                c.drawLine(3 * s, 12 * s, 21 * s, 12 * s, paint);
+            } else {                               // Nâng cao: thanh trượt
+                c.drawLine(3 * s, 6 * s, 21 * s, 6 * s, paint);
+                c.drawLine(3 * s, 12 * s, 21 * s, 12 * s, paint);
+                c.drawLine(3 * s, 18 * s, 21 * s, 18 * s, paint);
+                paint.setStyle(Paint.Style.FILL);
+                c.drawCircle(8 * s, 6 * s, 2.6f * s, paint);
+                c.drawCircle(16 * s, 12 * s, 2.6f * s, paint);
+                c.drawCircle(10 * s, 18 * s, 2.6f * s, paint);
+            }
         }
     }
 
@@ -329,24 +443,26 @@ public final class SettingsActivity extends Activity {
         box.setBackground(round(CARD_HI, 28));
         box.setPadding(dp(24), dp(22), dp(24), dp(22));
 
-        TextView check = text("✓", 18, CARD_HI);
-        check.setTypeface(Typeface.DEFAULT_BOLD);
-        check.setGravity(Gravity.CENTER);
+        summaryIcon = text("…", 18, CARD_HI);
+        summaryIcon.setTypeface(Typeface.DEFAULT_BOLD);
+        summaryIcon.setGravity(Gravity.CENTER);
         GradientDrawable circle = new GradientDrawable();
         circle.setShape(GradientDrawable.OVAL);
         circle.setColor(0xFFC2C6E0);
-        check.setBackground(circle);
-        box.addView(check, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        summaryIcon.setBackground(circle);
+        box.addView(summaryIcon, new LinearLayout.LayoutParams(dp(34), dp(34)));
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.addView(text("Sẵn sàng", 20, 0xFFC9CCE4));
-        col.addView(text(versionName(), 15, TEXT_SUB));
+        summaryTitle = text("Đang kiểm tra", 20, 0xFFC9CCE4);
+        summarySub = text("TikGoon " + versionName(), 14, TEXT_SUB);
+        col.addView(summaryTitle);
+        col.addView(summarySub);
         LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, WRAP, 1f);
         cp.setMargins(dp(20), 0, dp(12), 0);
         box.addView(col, cp);
 
-        TextView badge = text("Xposed 82", 14, ON_PRIMARY);
+        TextView badge = text("v" + versionName(), 14, ON_PRIMARY);
         badge.setPadding(dp(12), dp(5), dp(12), dp(5));
         badge.setBackground(round(0xFFC6CCF5, 8));
         box.addView(badge);
@@ -386,7 +502,7 @@ public final class SettingsActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(20), dp(14), dp(20), dp(14));
+        row.setPadding(dp(20), dp(12), dp(20), dp(12));
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.addView(text(title, 17, TEXT));
@@ -415,7 +531,12 @@ public final class SettingsActivity extends Activity {
         return row;
     }
 
-    private void toggle(LinearLayout card, String title, String sub, String key, boolean fallback) {
+    private LinearLayout toggle(LinearLayout card, String title, String sub, String key, boolean fallback) {
+        return toggle(card, title, sub, key, fallback, true);
+    }
+
+    private LinearLayout toggle(LinearLayout card, String title, String sub, String key, boolean fallback,
+                                boolean sync) {
         LinearLayout row = row(card, title, sub);
         Switch control = new Switch(this);
         int[][] states = {{android.R.attr.state_checked}, {}};
@@ -424,12 +545,233 @@ public final class SettingsActivity extends Activity {
         control.setChecked(prefs.getBoolean(key, fallback));
         control.setOnCheckedChangeListener((button, checked) -> {
             prefs.edit().putBoolean(key, checked).apply();
-            syncSettings();
+            if (sync) syncSettings();
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(WRAP, WRAP);
         lp.setMargins(dp(12), 0, 0, 0);
         row.addView(control, lp);
         pressable(row, control::toggle);
+        return row;
+    }
+
+    // ------------------------------------------------ trạng thái trực tiếp
+
+    private final class StatusRow {
+        View dot;
+        TextView sub;
+    }
+
+    private StatusRow statusRow(LinearLayout card, String title, Runnable onTap) {
+        LinearLayout row = row(card, title, "Đang kiểm tra…");
+        StatusRow status = new StatusRow();
+        status.sub = (TextView) row.getTag();
+        status.dot = new View(this);
+        GradientDrawable oval = new GradientDrawable();
+        oval.setShape(GradientDrawable.OVAL);
+        oval.setColor(TEXT_SUB);
+        status.dot.setBackground(oval);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(12), dp(12));
+        lp.setMargins(dp(12), 0, 0, 0);
+        row.addView(status.dot, lp);
+        if (onTap != null) pressable(row, onTap);
+        return status;
+    }
+
+    private void setStatus(StatusRow status, int color, String value) {
+        status.sub.setText(value);
+        ((GradientDrawable) status.dot.getBackground()).setColor(color);
+    }
+
+    private String detectRootManager() {
+        String[][] known = {{"me.weishu.kernelsu", "KernelSU"}, {"com.rifsxd.ksunext", "KernelSU Next"},
+                {"me.bmax.apatch", "APatch"}, {"com.topjohnwu.magisk", "Magisk"}};
+        for (String[] item : known) {
+            try {
+                getPackageManager().getPackageInfo(item[0], 0);
+                return item[1];
+            } catch (Exception ignored) { }
+        }
+        return "";
+    }
+
+    private String clock(long millis) {
+        return new SimpleDateFormat("HH:mm:ss dd/MM", Locale.getDefault()).format(new Date(millis));
+    }
+
+    /** Quét root ở nền: quyền root, TikTok có đang chạy không, và tệp trạng thái do hook ghi trong TikTok. */
+    private void refreshRoot() {
+        if (rootChecking) return;
+        rootChecking = true;
+        ROOT.execute(() -> {
+            int state = 2;
+            String version = "", info = "", pid = "", hookPid = "";
+            long loaded = 0;
+            boolean exists = false, ok = false;
+            try {
+                Process process = new ProcessBuilder("su", "-c",
+                        "id -u; echo ---; pidof " + TIKTOK + "; echo ---; cat " + STATUS_FILE +
+                                " 2>/dev/null; echo ---; su -v 2>/dev/null")
+                        .redirectErrorStream(true).start();
+                if (!process.waitFor(20, TimeUnit.SECONDS)) {
+                    process.destroy();
+                    info = "su không phản hồi";
+                } else {
+                    StringBuilder text = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) text.append(line).append('\n');
+                    }
+                    String[] part = text.toString().split("(?m)^---$", -1);
+                    if (part[0].trim().equals("0")) {
+                        state = 1;
+                        if (part.length > 1) pid = part[1].trim().split("\\s+")[0];
+                        if (part.length > 2) {
+                            for (String line : part[2].trim().split("\n")) {
+                                int eq = line.indexOf('=');
+                                if (eq < 0) continue;
+                                String key = line.substring(0, eq).trim();
+                                String value = line.substring(eq + 1).trim();
+                                exists = true;
+                                if (key.equals("pid")) hookPid = value;
+                                else if (key.equals("ok")) ok = value.equals("1");
+                                else if (key.equals("loaded")) {
+                                    try { loaded = Long.parseLong(value); } catch (NumberFormatException ignored) { }
+                                }
+                            }
+                        }
+                        if (part.length > 3) version = part[3].trim().split("\n")[0].trim();
+                    } else {
+                        String first = text.toString().trim();
+                        info = first.isEmpty() ? "bị từ chối" : first.split("\n")[0];
+                    }
+                }
+            } catch (Exception error) {
+                info = "không tìm thấy su";
+            }
+            rootVersion = version;
+            rootInfo = info;
+            tiktokPid = pid;
+            statusPid = hookPid;
+            statusLoaded = loaded;
+            statusExists = exists;
+            statusOk = ok;
+            rootState = state;
+            rootChecking = false;
+            runOnUiThread(this::renderAll);
+        });
+    }
+
+    private boolean sameSettings(String a, String b) {
+        try {
+            JSONObject x = new JSONObject(new String(Base64.decode(a, Base64.DEFAULT), "UTF-8"));
+            JSONObject y = new JSONObject(new String(Base64.decode(b, Base64.DEFAULT), "UTF-8"));
+            if (x.length() != y.length()) return false;
+            Iterator<String> keys = x.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                if (!String.valueOf(x.opt(key)).equals(String.valueOf(y.opt(key)))) return false;
+            }
+            return true;
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
+    private void renderAll() {
+        if (stModule == null) return;
+        String issue = null;
+
+        // Module LSPosed
+        int api = xposedApiVersion();
+        boolean hookEvidence = rootState == 1 && statusExists;
+        boolean moduleSeen = api > 0 || hookEvidence;
+        if (api > 0) setStatus(stModule, OK, "Đang hoạt động · Xposed API " + api);
+        else if (hookEvidence) setStatus(stModule, WARN,
+                "Đã nạp được vào TikTok. Thêm TikGoon vào phạm vi LSPosed để hiện số API tại đây");
+        else {
+            setStatus(stModule, BAD, "Chưa phát hiện. Bật TikGoon trong LSPosed và chọn phạm vi TikTok");
+            issue = "Chưa phát hiện module trong LSPosed";
+        }
+
+        // Root
+        if (rootState == 1) {
+            String text = "Đã cấp (uid=0)";
+            if (!rootManager.isEmpty()) text += " · " + rootManager;
+            if (!rootVersion.isEmpty()) text += " · su " + rootVersion;
+            setStatus(stRoot, OK, text);
+        } else if (rootState == 2) {
+            setStatus(stRoot, BAD, "Chưa có quyền root" + (rootInfo.isEmpty() ? "" : " (" + rootInfo + ")")
+                    + ". Cấp root cho TikGoon trong KernelSU/Magisk rồi chạm để thử lại");
+            if (issue == null) issue = "Chưa có quyền root";
+        } else {
+            setStatus(stRoot, TEXT_SUB, "Đang kiểm tra…");
+        }
+
+        // TikTok
+        boolean installed = false;
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(TIKTOK, 0);
+            installed = true;
+            String v = info.versionName == null ? "?" : info.versionName;
+            boolean match = v.startsWith("47.0.3");
+            String run = rootState != 1 ? "" : (tiktokPid.isEmpty() ? " · đang tắt" : " · đang chạy (PID " + tiktokPid + ")");
+            setStatus(stTikTok, match ? OK : WARN,
+                    "Phiên bản " + v + (match ? "" : " (module viết cho 47.0.3, hook có thể không chạy)") + run);
+            if (!match && issue == null) issue = "TikTok phiên bản " + v + " khác 47.0.3";
+        } catch (Exception error) {
+            setStatus(stTikTok, BAD, "Chưa cài TikTok (" + TIKTOK + ")");
+            if (issue == null) issue = "Chưa cài TikTok";
+        }
+
+        // Hook trong TikTok
+        boolean running = !tiktokPid.isEmpty();
+        if (rootState != 1) {
+            setStatus(stHook, TEXT_SUB, "Cần quyền root để kiểm tra");
+        } else if (running && statusExists && tiktokPid.equals(statusPid)) {
+            if (statusOk) setStatus(stHook, OK, "Đã nạp trong phiên TikTok hiện tại · " + clock(statusLoaded));
+            else {
+                setStatus(stHook, WARN, "Nạp hook bị lỗi lúc " + clock(statusLoaded) + ". Xem log LSPosed");
+                if (issue == null) issue = "Hook trong TikTok bị lỗi";
+            }
+        } else if (running) {
+            setStatus(stHook, BAD, "TikTok đang chạy nhưng chưa nạp hook. Kiểm tra phạm vi LSPosed, rồi buộc dừng và mở lại TikTok");
+            if (issue == null) issue = "TikTok chưa nạp hook";
+        } else if (statusExists) {
+            setStatus(stHook, TEXT_SUB, "TikTok đang tắt · lần nạp gần nhất " + clock(statusLoaded)
+                    + (statusOk ? "" : " (có lỗi)"));
+        } else {
+            setStatus(stHook, TEXT_SUB, "TikTok đang tắt · chưa từng nạp hook");
+        }
+
+        // Cấu hình đồng bộ
+        String current = Settings.Global.getString(getContentResolver(), Config.SYSTEM_KEY);
+        if (current == null || current.isEmpty()) {
+            setStatus(stConfig, WARN, "Chưa đồng bộ. Cần quyền root; đổi một công tắc để lưu");
+        } else {
+            boolean same;
+            try { same = sameSettings(current, encodedSettings()); } catch (Exception error) { same = false; }
+            setStatus(stConfig, same ? OK : WARN, same ? "Đã đồng bộ, khớp cài đặt hiện tại"
+                    : "Lệch với cài đặt trong app. Đổi một công tắc hoặc bấm Lưu để đồng bộ");
+        }
+
+        // Thẻ tổng quan
+        boolean good = issue == null && rootState == 1 && moduleSeen && installed;
+        if (rootState == 0) {
+            summaryIcon.setText("…");
+            summaryTitle.setText("Đang kiểm tra");
+            summarySub.setText("TikGoon " + versionName());
+        } else if (good) {
+            summaryIcon.setText("✓");
+            summaryTitle.setText("Đang hoạt động");
+            summarySub.setText("Module, root và TikTok đều ổn");
+        } else {
+            summaryIcon.setText("!");
+            summaryTitle.setText("Cần kiểm tra");
+            summarySub.setText(issue == null ? "Xem chi tiết bên dưới" : issue);
+        }
+        if (liveUpdated != null)
+            liveUpdated.setText("Cập nhật lúc " + new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date())
+                    + " · quét root mỗi 10 giây");
     }
 
     private void opacity(LinearLayout card, String label, String key, int fallback) {
@@ -725,32 +1067,36 @@ public final class SettingsActivity extends Activity {
                 }).setNegativeButton("Hủy", null).show();
     }
 
+    private String encodedSettings() throws Exception {
+        JSONObject values = new JSONObject();
+        for (String key : new String[]{"hide_ads", "hide_lives", "hide_photos", "hide_stories",
+                "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
+                "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
+                "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
+                "disable_live_auto_translate", "theme_rainbow"}) {
+            boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
+                    key.equals("spoof_region") || key.equals("allow_screenshots") ||
+                    key.equals("profile_background") || key.equals("disable_live_auto_translate");
+            values.put(key, prefs.getBoolean(key, fallback));
+        }
+        values.put("region_iso", prefs.getString("region_iso", "kz"));
+        values.put("font_family", prefs.getString("font_family", "default"));
+        values.put("theme_color", prefs.getString("theme_color", "#FF2D55"));
+        values.put("theme_color_opacity", prefs.getInt("theme_color_opacity", 0));
+        values.put("theme_image_opacity", prefs.getInt("theme_image_opacity", 0));
+        values.put("theme_video_opacity", prefs.getInt("theme_video_opacity", 0));
+        values.put("region_operator", prefs.getString("region_operator", "40101"));
+        values.put("region_operator_name", prefs.getString("region_operator_name", "Beeline"));
+        values.put("filter_words", prefs.getString("filter_words", ""));
+        values.put("min_likes", prefs.getLong("min_likes", 0));
+        values.put("min_views", prefs.getLong("min_views", 0));
+        values.put("min_publish_time", prefs.getLong("min_publish_time", 0));
+        return Base64.encodeToString(values.toString().getBytes("UTF-8"), Base64.NO_WRAP);
+    }
+
     private void syncSettings() {
         try {
-            JSONObject values = new JSONObject();
-            for (String key : new String[]{"hide_ads", "hide_lives", "hide_photos", "hide_stories",
-                    "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
-                    "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
-                    "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                    "disable_live_auto_translate", "theme_rainbow"}) {
-                boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
-                        key.equals("spoof_region") || key.equals("allow_screenshots") ||
-                        key.equals("profile_background") || key.equals("disable_live_auto_translate");
-                values.put(key, prefs.getBoolean(key, fallback));
-            }
-            values.put("region_iso", prefs.getString("region_iso", "kz"));
-            values.put("font_family", prefs.getString("font_family", "default"));
-            values.put("theme_color", prefs.getString("theme_color", "#FF2D55"));
-            values.put("theme_color_opacity", prefs.getInt("theme_color_opacity", 0));
-            values.put("theme_image_opacity", prefs.getInt("theme_image_opacity", 0));
-            values.put("theme_video_opacity", prefs.getInt("theme_video_opacity", 0));
-            values.put("region_operator", prefs.getString("region_operator", "40101"));
-            values.put("region_operator_name", prefs.getString("region_operator_name", "Beeline"));
-            values.put("filter_words", prefs.getString("filter_words", ""));
-            values.put("min_likes", prefs.getLong("min_likes", 0));
-            values.put("min_views", prefs.getLong("min_views", 0));
-            values.put("min_publish_time", prefs.getLong("min_publish_time", 0));
-            String encoded = Base64.encodeToString(values.toString().getBytes("UTF-8"), Base64.NO_WRAP);
+            String encoded = encodedSettings();
             SAVES.execute(() -> {
                 boolean saved = false;
                 try {
@@ -760,10 +1106,14 @@ public final class SettingsActivity extends Activity {
                     else process.destroy();
                 } catch (Exception ignored) { }
                 final boolean success = saved;
-                runOnUiThread(() -> Toast.makeText(this,
-                        success ? "Đã lưu; mở lại TikTok để áp dụng." :
-                                "Chưa lưu được. Hãy cấp quyền root cho TikGoon trong KernelSU.",
-                        Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> {
+                    Toast.makeText(this,
+                            success ? "Đã lưu; mở lại TikTok để áp dụng." :
+                                    "Chưa lưu được. Hãy cấp quyền root cho TikGoon trong KernelSU.",
+                            Toast.LENGTH_LONG).show();
+                    if (success) rootState = 1;
+                    renderAll();
+                });
             });
         } catch (Exception error) {
             Toast.makeText(this, "Không thể chuẩn bị cài đặt.", Toast.LENGTH_LONG).show();
