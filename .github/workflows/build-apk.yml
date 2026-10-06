@@ -1,0 +1,49 @@
+name: Build TikGoon APK (debug)
+
+on:
+  workflow_dispatch:        # nút "Run workflow" trên tab Actions
+  push:
+    branches: ['**']
+    paths:
+      - 'src/**'
+      - 'res/**'
+      - 'assets/**'
+      - 'AndroidManifest.xml'
+      - 'build.py'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # build.py gọi .exe/.bat của Android SDK nên bắt buộc chạy trên Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.1.0"
+
+      # Không đặt TIKGOON_RELEASE nên build.py ký bằng khóa debug, không cần secret
+      - name: Build debug APK
+        run: python build.py
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TikGoon-debug-${{ github.run_number }}
+          path: build/TikGoon-debug.apk
+          if-no-files-found: error
+          retention-days: 30
