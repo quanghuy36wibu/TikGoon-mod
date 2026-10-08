@@ -32,6 +32,8 @@ public final class Config {
     public static boolean DISABLE_LIVE_AUTO_TRANSLATE = true;
     public static boolean THEME_RAINBOW = false;
     public static boolean THEME_LIGHT = false;
+    public static boolean COMMENT_SCRIM = false;
+    public static int COMMENT_SCRIM_OPACITY = 35;
     public static String THEME_COLOR = "#FF2D55";
     public static int THEME_COLOR_OPACITY = 0;
     public static int THEME_IMAGE_OPACITY = 0;
@@ -72,6 +74,8 @@ public final class Config {
             DISABLE_LIVE_AUTO_TRANSLATE = values.optBoolean("disable_live_auto_translate", DISABLE_LIVE_AUTO_TRANSLATE);
             THEME_RAINBOW = values.optBoolean("theme_rainbow", THEME_RAINBOW);
             THEME_LIGHT = values.optBoolean("theme_light", THEME_LIGHT);
+            COMMENT_SCRIM = values.optBoolean("comment_scrim", COMMENT_SCRIM);
+            COMMENT_SCRIM_OPACITY = Math.max(0, Math.min(80, values.optInt("comment_scrim_opacity", COMMENT_SCRIM_OPACITY)));
             THEME_COLOR = values.optString("theme_color", THEME_COLOR);
             THEME_COLOR_OPACITY = Math.max(0, Math.min(80, values.optInt("theme_color_opacity", THEME_COLOR_OPACITY)));
             THEME_IMAGE_OPACITY = Math.max(0, Math.min(80, values.optInt("theme_image_opacity", THEME_IMAGE_OPACITY)));

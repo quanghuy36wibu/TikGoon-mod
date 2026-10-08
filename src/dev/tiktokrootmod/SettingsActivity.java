@@ -225,6 +225,9 @@ public final class SettingsActivity extends Activity {
         LinearLayout scope = card(p);
         toggle(scope, "Áp dụng cả giao diện sáng", "Phủ ảnh, màu, video lên nền trắng (hồ sơ, bình luận)",
                 "theme_light", false);
+        toggle(scope, "Làm dịu ảnh trong bình luận", "Thêm lớp mờ nhẹ để chữ dễ đọc, ảnh vẫn giữ độ đậm",
+                "comment_scrim", false);
+        opacity(scope, "Độ mờ lớp làm dịu", "comment_scrim_opacity", 35);
         note(scope, "Mặc định chỉ thay nền đen. Bật mục này nếu TikTok của bạn đang ở chế độ sáng. Khung bình luận nhận diện được cả tiếng Việt.");
 
         section(p, "Màu giao diện");
@@ -1228,7 +1231,7 @@ public final class SettingsActivity extends Activity {
                 "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                "disable_live_auto_translate", "theme_rainbow", "theme_light"}) {
+                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim"}) {
             boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
                     key.equals("spoof_region") || key.equals("allow_screenshots") ||
                     key.equals("profile_background") || key.equals("disable_live_auto_translate");
@@ -1238,6 +1241,7 @@ public final class SettingsActivity extends Activity {
         values.put("font_family", prefs.getString("font_family", "default"));
         values.put("theme_color", prefs.getString("theme_color", "#FF2D55"));
         values.put("theme_color_opacity", prefs.getInt("theme_color_opacity", 0));
+        values.put("comment_scrim_opacity", prefs.getInt("comment_scrim_opacity", 35));
         values.put("theme_image_opacity", prefs.getInt("theme_image_opacity", 0));
         values.put("theme_video_opacity", prefs.getInt("theme_video_opacity", 0));
         values.put("region_operator", prefs.getString("region_operator", "40101"));

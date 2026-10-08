@@ -91,7 +91,7 @@ final class ThemeHooks {
                 return;
             }
             suppressAncestors(panel);
-            applyCommentLayer(panel);
+            applyCommentLayer(panel, (TextView) view);
         });
     }
 
@@ -200,7 +200,7 @@ final class ThemeHooks {
         }
     }
 
-    private static void applyCommentLayer(FrameLayout panel) {
+    private static void applyCommentLayer(FrameLayout panel, TextView title) {
         if (COMMENT_THEMED.containsKey(panel)) return;
         COMMENT_THEMED.put(panel, true);
         panel.setClipToOutline(true);
@@ -214,6 +214,18 @@ final class ThemeHooks {
             wallpaperView.setClickable(false);
             panel.addView(wallpaperView, 0, new FrameLayout.LayoutParams(-1, -1));
             overlays.add(wallpaperView);
+            if (Config.COMMENT_SCRIM) {
+                // Lớp mờ (độ mờ chỉnh được) giữa ảnh và chữ: chữ tối -> lớp trắng, chữ sáng -> lớp đen, ảnh vẫn giữ nguyên độ đậm.
+                int textColor = title.getCurrentTextColor();
+                double luminance = 0.299 * Color.red(textColor) + 0.587 * Color.green(textColor)
+                        + 0.114 * Color.blue(textColor);
+                View scrim = new View(panel.getContext());
+                scrim.setClickable(false);
+                int scrimAlpha = Math.round(Config.COMMENT_SCRIM_OPACITY * 2.55f);
+                scrim.setBackgroundColor((scrimAlpha << 24) | (luminance < 128 ? 0x00FFFFFF : 0x00000000));
+                panel.addView(scrim, Math.min(1, panel.getChildCount()), new FrameLayout.LayoutParams(-1, -1));
+                overlays.add(scrim);
+            }
         }
         if (Config.THEME_VIDEO_OPACITY > 0) VideoBackground.attach(panel, true);
         if (Config.THEME_COLOR_OPACITY > 0) {
