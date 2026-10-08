@@ -1,0 +1,60 @@
+name: Release APK
+
+on:
+  push:
+    tags: ['v*']            # push tag dạng v0.8.7 là tự build và đăng lên Releases
+  workflow_dispatch:        # hoặc chạy tay: Actions -> Release APK -> Run workflow
+    inputs:
+      tag:
+        description: 'Tên tag/phiên bản (ví dụ v0.8.7)'
+        required: true
+        type: string
+
+permissions:
+  contents: write           # cần để tạo Release
+
+env:
+  # Đủ cả 4 secret keystore -> ký bằng khóa cố định (cài đè được). Thiếu -> khóa debug.
+  SIGNED: ${{ secrets.TIKGOON_KEYSTORE_BASE64 != '' && secrets.TIKGOON_KEYSTORE_PASSWORD != '' && secrets.TIKGOON_KEY_ALIAS != '' && secrets.TIKGOON_KEY_PASSWORD != '' && '1' || '0' }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.1.0"
+
+      - name: Build APK
+        run: python build.py
+        env:
+          TIKGOON_RELEASE: ${{ env.SIGNED }}
+          TIKGOON_KEYSTORE_BASE64: ${{ secrets.TIKGOON_KEYSTORE_BASE64 }}
+          TIKGOON_KEYSTORE_PASSWORD: ${{ secrets.TIKGOON_KEYSTORE_PASSWORD }}
+          TIKGOON_KEY_ALIAS: ${{ secrets.TIKGOON_KEY_ALIAS }}
+          TIKGOON_KEY_PASSWORD: ${{ secrets.TIKGOON_KEY_PASSWORD }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: TikGoon ${{ github.event.inputs.tag || github.ref_name }}
+          files: build/TikGoon-*.apk
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          prerelease: ${{ env.SIGNED != '1' }}
+          body: |
+            Module LSPosed cho TikTok 47.0.3 (`com.ss.android.ugc.trill`).
+            ${{ env.SIGNED == '1' && 'APK ký bằng khóa cố định: cài đè được bản cũ.' || 'APK ký bằng khóa debug: gỡ bản cũ trước khi cài.' }}
