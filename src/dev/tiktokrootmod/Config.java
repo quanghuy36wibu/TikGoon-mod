@@ -31,6 +31,7 @@ public final class Config {
     public static boolean UNLIMITED_PINNED_CHATS = false;
     public static boolean DISABLE_LIVE_AUTO_TRANSLATE = true;
     public static boolean THEME_RAINBOW = false;
+    public static boolean THEME_LIGHT = false;
     public static String THEME_COLOR = "#FF2D55";
     public static int THEME_COLOR_OPACITY = 0;
     public static int THEME_IMAGE_OPACITY = 0;
@@ -70,6 +71,7 @@ public final class Config {
             UNLIMITED_PINNED_CHATS = values.optBoolean("unlimited_pinned_chats", UNLIMITED_PINNED_CHATS);
             DISABLE_LIVE_AUTO_TRANSLATE = values.optBoolean("disable_live_auto_translate", DISABLE_LIVE_AUTO_TRANSLATE);
             THEME_RAINBOW = values.optBoolean("theme_rainbow", THEME_RAINBOW);
+            THEME_LIGHT = values.optBoolean("theme_light", THEME_LIGHT);
             THEME_COLOR = values.optString("theme_color", THEME_COLOR);
             THEME_COLOR_OPACITY = Math.max(0, Math.min(80, values.optInt("theme_color_opacity", THEME_COLOR_OPACITY)));
             THEME_IMAGE_OPACITY = Math.max(0, Math.min(80, values.optInt("theme_image_opacity", THEME_IMAGE_OPACITY)));

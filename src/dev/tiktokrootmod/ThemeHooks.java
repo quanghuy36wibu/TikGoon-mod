@@ -35,6 +35,9 @@ final class ThemeHooks {
     private static long imageLastModified = Long.MIN_VALUE;
     private static long imageLength = -1L;
     private static int themedCount;
+    private static int commentLogs;
+    /** Tiêu đề khung bình luận, ví dụ "1.883 bình luận" hoặc "1,883 comments". */
+    private static final String COMMENT_TITLE = ".*[0-9].*(comments?|bình luận|komentar|comentarios?|commentaires?|kommentare?|комментар|评论|評論|コメント|댓글|ความคิดเห็น|yorum).*";
     private ThemeHooks() {}
 
     static void install() {
@@ -69,11 +72,17 @@ final class ThemeHooks {
         if (!(view instanceof TextView)) return;
         CharSequence text = ((TextView) view).getText();
         if (text == null || text.length() > 80 ||
-                !text.toString().toLowerCase(java.util.Locale.ROOT).matches(".*[0-9].*comments.*")) return;
+                !text.toString().toLowerCase(java.util.Locale.ROOT).matches(COMMENT_TITLE)) return;
         view.post(() -> {
             View current = view;
-            for (int depth = 0; depth < 10 && current != null; depth++) {
-                if (current instanceof FrameLayout && current.getBackground() instanceof GradientDrawable &&
+            StringBuilder chain = new StringBuilder();
+            for (int depth = 0; depth < 12 && current != null; depth++) {
+                Drawable background = current.getBackground();
+                if (commentLogs < 3) chain.append(current.getClass().getSimpleName()).append('[')
+                        .append(background == null ? "-" : background.getClass().getSimpleName()).append(' ')
+                        .append(current.getWidth()).append('x').append(current.getHeight()).append("] > ");
+                if (current instanceof FrameLayout &&
+                        (background instanceof GradientDrawable || background instanceof ColorDrawable) &&
                         current.getWidth() >= current.getResources().getDisplayMetrics().widthPixels * 0.7f &&
                         current.getHeight() >= current.getResources().getDisplayMetrics().heightPixels * 0.2f) {
                     applyCommentLayer((FrameLayout) current);
@@ -81,6 +90,8 @@ final class ThemeHooks {
                 }
                 current = current.getParent() instanceof View ? (View) current.getParent() : null;
             }
+            if (commentLogs++ < 3)
+                XposedBridge.log("TikTokRootMod: comment title found but no panel matched: " + chain);
         });
     }
 
@@ -117,7 +128,7 @@ final class ThemeHooks {
     private static void consider(View view) {
         if (!(view instanceof ViewGroup) || THEMED.containsKey(view)) return;
         Drawable background = view.getBackground();
-        if (!(background instanceof ColorDrawable) || !isDark(((ColorDrawable) background).getColor())) return;
+        if (!(background instanceof ColorDrawable) || !themable(((ColorDrawable) background).getColor())) return;
         view.post(() -> {
             try {
                 if (THEMED.containsKey(view) || !view.isAttachedToWindow()) return;
@@ -126,7 +137,7 @@ final class ThemeHooks {
                 if (view.getWidth() < screenWidth * 0.7f || view.getHeight() < screenHeight * 0.20f) return;
                 Drawable current = view.getBackground();
                 if (!(current instanceof ColorDrawable) ||
-                        !isDark(((ColorDrawable) current).getColor())) return;
+                        !themable(((ColorDrawable) current).getColor())) return;
                 Bitmap image = loadImage();
                 if (Config.THEME_IMAGE_OPACITY > 0 && image == null && Config.THEME_COLOR_OPACITY == 0 &&
                         Config.THEME_VIDEO_OPACITY == 0) return;
@@ -149,6 +160,13 @@ final class ThemeHooks {
                 XposedBridge.log("TikTokRootMod: background theme: " + error);
             }
         });
+    }
+
+    /** Nền tối như trước; nếu bật "giao diện sáng" thì nền trắng cũng được thay. */
+    private static boolean themable(int color) {
+        if (isDark(color)) return true;
+        return Config.THEME_LIGHT && Color.alpha(color) == 255 && Color.red(color) >= 245 &&
+                Color.green(color) >= 245 && Color.blue(color) >= 245;
     }
 
     private static boolean isDark(int color) {

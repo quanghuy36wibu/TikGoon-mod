@@ -221,6 +221,12 @@ public final class SettingsActivity extends Activity {
                     syncSettings();
                 }).show());
 
+        section(p, "Phạm vi nền");
+        LinearLayout scope = card(p);
+        toggle(scope, "Áp dụng cả giao diện sáng", "Phủ ảnh, màu, video lên nền trắng (hồ sơ, bình luận)",
+                "theme_light", false);
+        note(scope, "Mặc định chỉ thay nền đen. Bật mục này nếu TikTok của bạn đang ở chế độ sáng. Khung bình luận nhận diện được cả tiếng Việt.");
+
         section(p, "Màu giao diện");
         LinearLayout color = card(p);
         note(color, "Màu, ảnh hoặc video thay các vùng nền tối, kể cả khung bình luận. Video bài đăng và nút bấm vẫn ở phía trước.");
@@ -1222,7 +1228,7 @@ public final class SettingsActivity extends Activity {
                 "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                "disable_live_auto_translate", "theme_rainbow"}) {
+                "disable_live_auto_translate", "theme_rainbow", "theme_light"}) {
             boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
                     key.equals("spoof_region") || key.equals("allow_screenshots") ||
                     key.equals("profile_background") || key.equals("disable_live_auto_translate");
