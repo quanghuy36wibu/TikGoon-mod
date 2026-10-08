@@ -118,7 +118,7 @@ public final class SettingsActivity extends Activity {
         @Override public void run() {
             renderAll();
             tick++;
-            if (tick % 5 == 0 && prefs.getBoolean("live_monitor", true)) refreshRoot();
+            if (tick % 5 == 0 && prefs.getBoolean("live_monitor", false)) refreshRoot();
             handler.postDelayed(this, 2000);
         }
     };
@@ -183,12 +183,9 @@ public final class SettingsActivity extends Activity {
         stTikTok = statusRow(live, "TikTok", null);
         stHook = statusRow(live, "Hook trong TikTok", null);
         stConfig = statusRow(live, "Cấu hình đồng bộ", null);
-        LinearLayout monitor = toggle(live, "Theo dõi trực tiếp", "Quét root mỗi 10 giây", "live_monitor", true, false);
-        liveUpdated = (TextView) monitor.getTag();
-        toggle(live, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
-                "auto_restart", false, false);
+        liveUpdated = note(live, "Đang kiểm tra…");
         action(live, "Khởi động lại TikTok ngay", "Buộc dừng rồi mở lại bằng root", this::confirmRestart);
-        note(live, "Sau khi đổi cài đặt, buộc dừng và mở lại TikTok. Chạm vào dòng Quyền root để kiểm tra lại ngay. KernelSU có thể hiện thông báo mỗi lần quét.");
+        note(live, "Sau khi đổi cài đặt, buộc dừng và mở lại TikTok. Chạm vào dòng Quyền root để quét lại ngay. Theo dõi trực tiếp và Tự khởi động lại nằm trong tab Nâng cao.");
 
         section(p, "Lọc feed");
         LinearLayout feed = card(p);
@@ -290,6 +287,13 @@ public final class SettingsActivity extends Activity {
     }
 
     private void buildAdvanced(LinearLayout p) {
+        section(p, "Theo dõi và khởi động lại");
+        LinearLayout system = card(p);
+        toggle(system, "Theo dõi trực tiếp", "Quét root mỗi 10 giây khi đang mở app (KernelSU có thể hiện thông báo)",
+                "live_monitor", false, false);
+        toggle(system, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
+                "auto_restart", false, false);
+
         section(p, "Tải media");
         LinearLayout media = card(p);
         toggle(media, "Bỏ watermark khi tải video", "Dùng nút tải sẵn có của TikTok", "remove_download_watermark", false);
@@ -563,10 +567,11 @@ public final class SettingsActivity extends Activity {
         parent.addView(view);
     }
 
-    private void note(LinearLayout card, String value) {
+    private TextView note(LinearLayout card, String value) {
         TextView view = text(value, 14, TEXT_SUB);
         view.setPadding(dp(20), dp(10), dp(20), dp(10));
         card.addView(view);
+        return view;
     }
 
     /** Một dòng tiêu đề + mô tả; TextView mô tả (nếu có) nằm trong tag của dòng. */
@@ -895,7 +900,8 @@ public final class SettingsActivity extends Activity {
         }
         if (liveUpdated != null)
             liveUpdated.setText("Cập nhật lúc " + new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date())
-                    + " · quét root mỗi 10 giây");
+                    + (prefs.getBoolean("live_monitor", false) ? " · quét root mỗi 10 giây"
+                    : " · theo dõi trực tiếp đang tắt"));
     }
 
     private void opacity(LinearLayout card, String label, String key, int fallback) {
