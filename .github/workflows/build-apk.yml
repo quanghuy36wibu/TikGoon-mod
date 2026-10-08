@@ -1,7 +1,7 @@
-name: Build TikGoon APK (debug)
+name: Build TikGoon APK
 
 on:
-  workflow_dispatch:        # nút "Run workflow" trên tab Actions
+  workflow_dispatch:
   push:
     branches: ['**']
     paths:
@@ -10,14 +10,12 @@ on:
       - 'assets/**'
       - 'AndroidManifest.xml'
       - 'build.py'
-  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   build:
-    # build.py gọi .exe/.bat của Android SDK nên bắt buộc chạy trên Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -36,14 +34,21 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-36" "build-tools;36.1.0"
 
-      # Không đặt TIKGOON_RELEASE nên build.py ký bằng khóa debug, không cần secret
-      - name: Build debug APK
+      # Đủ cả 4 secret -> ký bằng khóa cố định (cài đè được bản cũ).
+      # Thiếu bất kỳ secret nào -> ký bằng khóa debug ngẫu nhiên như trước.
+      - name: Build APK
         run: python build.py
+        env:
+          TIKGOON_RELEASE: ${{ secrets.TIKGOON_KEYSTORE_BASE64 != '' && secrets.TIKGOON_KEYSTORE_PASSWORD != '' && secrets.TIKGOON_KEY_ALIAS != '' && secrets.TIKGOON_KEY_PASSWORD != '' && '1' || '0' }}
+          TIKGOON_KEYSTORE_BASE64: ${{ secrets.TIKGOON_KEYSTORE_BASE64 }}
+          TIKGOON_KEYSTORE_PASSWORD: ${{ secrets.TIKGOON_KEYSTORE_PASSWORD }}
+          TIKGOON_KEY_ALIAS: ${{ secrets.TIKGOON_KEY_ALIAS }}
+          TIKGOON_KEY_PASSWORD: ${{ secrets.TIKGOON_KEY_PASSWORD }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: TikGoon-debug-${{ github.run_number }}
-          path: build/TikGoon-debug.apk
+          name: TikGoon-${{ github.run_number }}
+          path: build/TikGoon-*.apk
           if-no-files-found: error
           retention-days: 30
