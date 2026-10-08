@@ -29,6 +29,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.AccelerateInterpolator;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -92,6 +94,7 @@ public final class SettingsActivity extends Activity {
     private final ArrayList<FrameLayout> tabPills = new ArrayList<>();
     private final ArrayList<IconView> tabIcons = new ArrayList<>();
     private final ArrayList<TextView> tabLabels = new ArrayList<>();
+    private int currentTab = -1; // -1 = chưa chọn lần nào (lần đầu không animate)
 
     // Trạng thái trực tiếp
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -321,14 +324,73 @@ public final class SettingsActivity extends Activity {
     }
 
     private void selectTab(int selected) {
+        // ── Cập nhật thanh tab dưới ────────────────────────────────────────
         for (int i = 0; i < pages.size(); i++) {
             boolean on = i == selected;
-            pages.get(i).setVisibility(on ? View.VISIBLE : View.GONE);
             tabPills.get(i).setBackground(on ? round(CARD_HI, 16) : null);
             tabIcons.get(i).setColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTextColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
         }
+
+        int previous = currentTab;
+        currentTab = selected;
+
+        // ── Lần đầu mở app – không cần animation ──────────────────────────
+        if (previous < 0) {
+            for (int i = 0; i < pages.size(); i++) {
+                pages.get(i).setVisibility(i == selected ? View.VISIBLE : View.GONE);
+            }
+            return;
+        }
+
+        if (previous == selected) return; // bấm lại tab đang active
+
+        // ── Shared-axis slide: hướng trượt phụ thuộc vào vị trí tab ───────
+        //   tab mới > tab cũ  → nội dung trượt sang trái (đến từ bên phải)
+        //   tab mới < tab cũ  → nội dung trượt sang phải (đến từ bên trái)
+        final int DURATION   = 300;
+        final float DISTANCE = dp(56);            // khoảng dịch chuyển (nhẹ, không full-screen)
+        final float direction = selected > previous ? 1f : -1f;
+
+        DecelerateInterpolator decel = new DecelerateInterpolator(2.2f);
+        AccelerateInterpolator accel = new AccelerateInterpolator(2.2f);
+
+        // ── Ẩn các trang không liên quan ngay lập tức ─────────────────────
+        for (int i = 0; i < pages.size(); i++) {
+            if (i != selected && i != previous) {
+                ScrollView p = pages.get(i);
+                p.setVisibility(View.GONE);
+                p.setAlpha(1f);
+                p.setTranslationX(0f);
+            }
+        }
+
+        // ── Trang mới: trượt vào từ ngoài rìa ────────────────────────────
+        final ScrollView incoming = pages.get(selected);
+        incoming.setAlpha(0f);
+        incoming.setTranslationX(DISTANCE * direction);
+        incoming.setVisibility(View.VISIBLE);
+        incoming.animate()
+                .alpha(1f)
+                .translationX(0f)
+                .setDuration(DURATION)
+                .setInterpolator(decel)
+                .start();
+
+        // ── Trang cũ: trượt ra phía ngược lại ────────────────────────────
+        final ScrollView outgoing = pages.get(previous);
+        outgoing.animate()
+                .alpha(0f)
+                .translationX(-DISTANCE * direction)
+                .setDuration(DURATION)
+                .setInterpolator(accel)
+                .withEndAction(() -> {
+                    outgoing.setVisibility(View.GONE);
+                    outgoing.setAlpha(1f);
+                    outgoing.setTranslationX(0f);
+                })
+                .start();
     }
 
     /** Icon tab tự vẽ, không phụ thuộc icon hệ thống. */
