@@ -33,19 +33,22 @@ public final class Entry implements IXposedHookLoadPackage {
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
                     try {
                         Config.load((Context) hook.args[0]);
-                        FeedHooks.install(param.classLoader);
-                        if (Config.CLEAN_SHARE_LINKS) CleanLinkHooks.install();
-                        if (Config.SPOOF_REGION) RegionHooks.install();
-                        if (Config.ALLOW_SCREENSHOTS) ScreenCaptureHooks.install();
-                        if (Config.ENABLE_PROFILE_BACKGROUND) ProfileBackgroundHooks.install(param.classLoader);
-                        VideoHooks.install(param.classLoader);
-                        MediaHooks.install(param.classLoader);
-                        MessageHooks.install(param.classLoader);
-                        AppearanceHooks.install();
-                        ThemeHooks.install();
-                        LiveTranslationHooks.install(param.classLoader);
+                        boolean ok = true;
+                        ok &= step("feed", () -> FeedHooks.install(param.classLoader));
+                        if (Config.CLEAN_SHARE_LINKS) ok &= step("clean-links", CleanLinkHooks::install);
+                        if (Config.SPOOF_REGION) ok &= step("region", RegionHooks::install);
+                        if (Config.ALLOW_SCREENSHOTS) ok &= step("screenshots", ScreenCaptureHooks::install);
+                        if (Config.ENABLE_PROFILE_BACKGROUND)
+                            ok &= step("profile-bg", () -> ProfileBackgroundHooks.install(param.classLoader));
+                        ok &= step("video", () -> VideoHooks.install(param.classLoader));
+                        ok &= step("media", () -> MediaHooks.install(param.classLoader));
+                        ok &= step("message", () -> MessageHooks.install(param.classLoader));
+                        ok &= step("appearance", AppearanceHooks::install);
+                        ok &= step("theme", ThemeHooks::install);
+                        ok &= step("live-translation", () -> LiveTranslationHooks.install(param.classLoader));
+                        if (Config.DISABLE_DOUBLE_TAP_LIKE) ok &= step("double-tap", DoubleTapHooks::install);
                         XposedBridge.log("TikTokRootMod: hooks installed for " + TARGET);
-                        writeStatus((Context) hook.args[0], true);
+                        writeStatus((Context) hook.args[0], ok);
                     } catch (Throwable error) {
                         XposedBridge.log("TikTokRootMod: hook setup failed");
                         XposedBridge.log(error);
@@ -56,6 +59,20 @@ public final class Entry implements IXposedHookLoadPackage {
         } catch (Throwable error) {
             XposedBridge.log("TikTokRootMod: hook setup failed");
             XposedBridge.log(error);
+        }
+    }
+
+    private interface Step { void run() throws Throwable; }
+
+    /** Chạy một nhóm hook; nếu lỗi thì ghi log và vẫn cho các nhóm khác chạy tiếp. */
+    private static boolean step(String name, Step step) {
+        try {
+            step.run();
+            return true;
+        } catch (Throwable error) {
+            XposedBridge.log("TikTokRootMod: hook group '" + name + "' failed");
+            XposedBridge.log(error);
+            return false;
         }
     }
 

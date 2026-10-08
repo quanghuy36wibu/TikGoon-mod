@@ -210,6 +210,8 @@ public final class SettingsActivity extends Activity {
         toggle(video, "Luôn hiện thanh tua video", null, "always_show_seekbar", false);
         toggle(video, "Giao diện tối giản", "Ẩn một số lớp phủ video", "minimal_ui", false);
         toggle(video, "Giảm lưu ảnh OLED", "Làm mờ, dịch chuyển lớp phủ", "anti_burnout", false);
+        toggle(video, "Tắt chạm 2 lần để thả tim", "Chạm đúp không còn thả tim, vẫn dùng được nút tim",
+                "disable_double_tap_like", false);
         note(video, "Khi bật cả hai, Tối giản ẩn lớp phủ nên hiệu ứng làm mờ chỉ thấy rõ khi tắt Tối giản.");
         LinearLayout fontRow = action(video, "Font TikTok", prefs.getString("font_family", "default"), null);
         TextView fontSub = (TextView) fontRow.getTag();
@@ -1231,7 +1233,7 @@ public final class SettingsActivity extends Activity {
                 "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim"}) {
+                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim", "disable_double_tap_like"}) {
             boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
                     key.equals("spoof_region") || key.equals("allow_screenshots") ||
                     key.equals("profile_background") || key.equals("disable_live_auto_translate");
