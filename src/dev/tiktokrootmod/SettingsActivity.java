@@ -29,8 +29,8 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.view.animation.DecelerateInterpolator;
 import android.view.animation.AccelerateInterpolator;
+import android.view.animation.DecelerateInterpolator;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -94,11 +94,13 @@ public final class SettingsActivity extends Activity {
     private final ArrayList<FrameLayout> tabPills = new ArrayList<>();
     private final ArrayList<IconView> tabIcons = new ArrayList<>();
     private final ArrayList<TextView> tabLabels = new ArrayList<>();
-    private int currentTab = -1; // -1 = chưa chọn lần nào (lần đầu không animate)
 
     // Trạng thái trực tiếp
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int tick;
+    private int currentTab = -1;
+    private int transitionId;
+    private final java.util.HashMap<String, SeekBar> opacityBars = new java.util.HashMap<>();
     private final Runnable restartTask = this::restartTikTok;
     private volatile boolean rootChecking;
     private StatusRow stModule, stRoot, stTikTok, stHook, stConfig;
@@ -132,6 +134,10 @@ public final class SettingsActivity extends Activity {
     @Override protected void onPause() {
         super.onPause();
         handler.removeCallbacks(ticker);
+        if (currentTab >= 0) {          // dừng animation đang dở, chỉ giữ lại đúng trang hiện tại
+            transitionId++;
+            showOnly(currentTab);
+        }
     }
 
     @Override protected void onCreate(Bundle state) {
@@ -324,7 +330,6 @@ public final class SettingsActivity extends Activity {
     }
 
     private void selectTab(int selected) {
-        // ── Cập nhật thanh tab dưới ────────────────────────────────────────
         for (int i = 0; i < pages.size(); i++) {
             boolean on = i == selected;
             tabPills.get(i).setBackground(on ? round(CARD_HI, 16) : null);
@@ -332,65 +337,66 @@ public final class SettingsActivity extends Activity {
             tabLabels.get(i).setTextColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
         }
-
         int previous = currentTab;
+        if (previous == selected) return;
         currentTab = selected;
-
-        // ── Lần đầu mở app – không cần animation ──────────────────────────
-        if (previous < 0) {
-            for (int i = 0; i < pages.size(); i++) {
-                pages.get(i).setVisibility(i == selected ? View.VISIBLE : View.GONE);
-            }
+        final int id = ++transitionId;
+        if (previous < 0) {                       // lần đầu mở app: không cần animation
+            showOnly(selected);
             return;
         }
 
-        if (previous == selected) return; // bấm lại tab đang active
-
-        // ── Shared-axis slide: hướng trượt phụ thuộc vào vị trí tab ───────
-        //   tab mới > tab cũ  → nội dung trượt sang trái (đến từ bên phải)
-        //   tab mới < tab cũ  → nội dung trượt sang phải (đến từ bên trái)
-        final int DURATION   = 300;
-        final float DISTANCE = dp(56);            // khoảng dịch chuyển (nhẹ, không full-screen)
+        // Kiểu "fade through": trang cũ mờ dần và trượt đi trước, rồi trang mới mới hiện ra.
+        // Hai trang không bao giờ hiện cùng lúc nên chữ không bị chồng lên nhau.
+        final ScrollView outgoing = pages.get(previous);
+        final ScrollView incoming = pages.get(selected);
         final float direction = selected > previous ? 1f : -1f;
+        final float shift = dp(24);
 
-        DecelerateInterpolator decel = new DecelerateInterpolator(2.2f);
-        AccelerateInterpolator accel = new AccelerateInterpolator(2.2f);
-
-        // ── Ẩn các trang không liên quan ngay lập tức ─────────────────────
         for (int i = 0; i < pages.size(); i++) {
-            if (i != selected && i != previous) {
-                ScrollView p = pages.get(i);
-                p.setVisibility(View.GONE);
-                p.setAlpha(1f);
-                p.setTranslationX(0f);
-            }
+            ScrollView page = pages.get(i);
+            page.animate().cancel();              // hủy animation cũ khi bấm tab liên tục
+            if (page != outgoing) resetPage(page, View.GONE);
         }
 
-        // ── Trang mới: trượt vào từ ngoài rìa ────────────────────────────
-        final ScrollView incoming = pages.get(selected);
-        incoming.setAlpha(0f);
-        incoming.setTranslationX(DISTANCE * direction);
-        incoming.setVisibility(View.VISIBLE);
-        incoming.animate()
-                .alpha(1f)
-                .translationX(0f)
-                .setDuration(DURATION)
-                .setInterpolator(decel)
-                .start();
-
-        // ── Trang cũ: trượt ra phía ngược lại ────────────────────────────
-        final ScrollView outgoing = pages.get(previous);
+        outgoing.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         outgoing.animate()
                 .alpha(0f)
-                .translationX(-DISTANCE * direction)
-                .setDuration(DURATION)
-                .setInterpolator(accel)
+                .translationX(-direction * shift)
+                .setDuration(90)
+                .setInterpolator(new AccelerateInterpolator())
                 .withEndAction(() -> {
-                    outgoing.setVisibility(View.GONE);
-                    outgoing.setAlpha(1f);
-                    outgoing.setTranslationX(0f);
+                    if (id != transitionId) return;
+                    resetPage(outgoing, View.GONE);
+                    incoming.setAlpha(0f);
+                    incoming.setTranslationX(direction * shift);
+                    incoming.setVisibility(View.VISIBLE);
+                    incoming.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                    incoming.animate()
+                            .alpha(1f)
+                            .translationX(0f)
+                            .setDuration(210)
+                            .setInterpolator(new DecelerateInterpolator(1.6f))
+                            .withEndAction(() -> {
+                                if (id == transitionId) resetPage(incoming, View.VISIBLE);
+                            })
+                            .start();
                 })
                 .start();
+    }
+
+    private void resetPage(ScrollView page, int visibility) {
+        page.setAlpha(1f);
+        page.setTranslationX(0f);
+        page.setLayerType(View.LAYER_TYPE_NONE, null);
+        page.setVisibility(visibility);
+    }
+
+    private void showOnly(int selected) {
+        for (int i = 0; i < pages.size(); i++) {
+            pages.get(i).animate().cancel();
+            resetPage(pages.get(i), i == selected ? View.VISIBLE : View.GONE);
+        }
     }
 
     /** Icon tab tự vẽ, không phụ thuộc icon hệ thống. */
@@ -727,6 +733,28 @@ public final class SettingsActivity extends Activity {
         });
     }
 
+    /** Đặt độ mờ trong cài đặt và cập nhật luôn thanh trượt trên màn hình. */
+    private void setOpacity(String key, int value) {
+        prefs.edit().putInt(key, value).apply();
+        SeekBar bar = opacityBars.get(key);
+        if (bar != null) bar.setProgress(value);
+    }
+
+    /** Sau khi chọn lại ảnh/video: nếu độ mờ đang 0% (do lần xóa trước) thì đặt lại 40% để nhìn thấy ngay. */
+    private boolean restoreOpacity(String key) {
+        if (prefs.getInt(key, 0) > 0) return false;
+        setOpacity(key, 40);
+        syncSettings();
+        return true;
+    }
+
+    private boolean scheduleAutoRestart() {
+        if (!prefs.getBoolean("auto_restart", false)) return false;
+        handler.removeCallbacks(restartTask);
+        handler.postDelayed(restartTask, 3000);
+        return true;
+    }
+
     private void confirmRestart() {
         dialog().setTitle("Khởi động lại TikTok?")
                 .setMessage("TikTok sẽ bị buộc dừng rồi mở lại. Video đang tải lên hoặc đang soạn có thể bị mất.")
@@ -876,6 +904,7 @@ public final class SettingsActivity extends Activity {
         card.addView(value);
         SeekBar seek = new SeekBar(this);
         seek.setMax(80);
+        opacityBars.put(key, seek);
         seek.setProgress(prefs.getInt(key, fallback));
         seek.setProgressTintList(ColorStateList.valueOf(PRIMARY));
         seek.setThumbTintList(ColorStateList.valueOf(PRIMARY));
@@ -1004,14 +1033,23 @@ public final class SettingsActivity extends Activity {
                 success = process.waitFor(30, TimeUnit.SECONDS) && process.exitValue() == 0;
             } catch (Exception ignored) { }
             final boolean saved = success;
-            runOnUiThread(() -> Toast.makeText(this, saved ?
-                    "Đã lưu ảnh. Chỉnh độ mờ ảnh rồi mở lại TikTok." :
-                    "Không lưu được ảnh. Kiểm tra quyền root của module.", Toast.LENGTH_LONG).show());
+            runOnUiThread(() -> {
+                if (!saved) {
+                    Toast.makeText(this, "Không lưu được ảnh. Kiểm tra quyền root của module.",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                boolean restored = restoreOpacity("theme_image_opacity");
+                boolean auto = restored ? prefs.getBoolean("auto_restart", false) : scheduleAutoRestart();
+                Toast.makeText(this, "Đã lưu ảnh" + (restored ? ", độ mờ đặt lại 40%" : "") +
+                        (auto ? ". TikTok sẽ tự khởi động lại." : ". Mở lại TikTok để áp dụng."),
+                        Toast.LENGTH_LONG).show();
+            });
         });
     }
 
     private void clearThemeImage() {
-        prefs.edit().putInt("theme_image_opacity", 0).apply();
+        setOpacity("theme_image_opacity", 0);
         syncSettings();
         SAVES.execute(() -> {
             try { new ProcessBuilder("su", "-c", "rm -f " + ThemeHooks.IMAGE_PATH)
@@ -1043,14 +1081,23 @@ public final class SettingsActivity extends Activity {
                 success = process.waitFor(60, TimeUnit.SECONDS) && process.exitValue() == 0;
             } catch (Exception ignored) { }
             final boolean saved = success;
-            runOnUiThread(() -> Toast.makeText(this, saved ?
-                    "Đã lưu video. Chỉnh độ mờ rồi mở lại TikTok." :
-                    "Không lưu được video (giới hạn 200 MB).", Toast.LENGTH_LONG).show());
+            runOnUiThread(() -> {
+                if (!saved) {
+                    Toast.makeText(this, "Không lưu được video (giới hạn 200 MB).",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                boolean restored = restoreOpacity("theme_video_opacity");
+                boolean auto = restored ? prefs.getBoolean("auto_restart", false) : scheduleAutoRestart();
+                Toast.makeText(this, "Đã lưu video" + (restored ? ", độ mờ đặt lại 40%" : "") +
+                        (auto ? ". TikTok sẽ tự khởi động lại." : ". Mở lại TikTok để áp dụng."),
+                        Toast.LENGTH_LONG).show();
+            });
         });
     }
 
     private void clearThemeVideo() {
-        prefs.edit().putInt("theme_video_opacity", 0).apply();
+        setOpacity("theme_video_opacity", 0);
         syncSettings();
         SAVES.execute(() -> {
             try { new ProcessBuilder("su", "-c", "rm -f " + VideoBackground.VIDEO_PATH)
