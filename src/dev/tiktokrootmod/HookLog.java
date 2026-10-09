@@ -21,6 +21,7 @@ final class HookLog {
     private HookLog() {}
 
     static void init(Context context) {
+        if (!Config.LOG_ENABLED) return;
         try {
             File target = new File(context.getFilesDir(), "tiktokrootmod_log");
             if (target.length() > 100_000) target.delete();
@@ -29,14 +30,17 @@ final class HookLog {
         } catch (Throwable ignored) { }
     }
 
+    /** Tắt công tắc "Ghi nhật ký" thì không ghi gì cả (không tốn IO, TikTok nhẹ hơn). */
     static void log(String message) {
+        if (!Config.LOG_ENABLED) return;
         XposedBridge.log(message);
         write(message);
     }
 
+    /** Lỗi (exception) luôn được ghi vào LSPosed; chỉ ghi vào tệp khi bật nhật ký. */
     static void log(Throwable error) {
         XposedBridge.log(error);
-        write(Log.getStackTraceString(error));
+        if (Config.LOG_ENABLED) write(Log.getStackTraceString(error));
     }
 
     private static synchronized void write(String message) {

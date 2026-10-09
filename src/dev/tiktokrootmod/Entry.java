@@ -32,8 +32,8 @@ public final class Entry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(Application.class, "attach", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
                     try {
-                        HookLog.init((Context) hook.args[0]);
                         Config.load((Context) hook.args[0]);
+                        HookLog.init((Context) hook.args[0]);
                         boolean ok = true;
                         ok &= step("feed", () -> FeedHooks.install(param.classLoader));
                         if (Config.CLEAN_SHARE_LINKS) ok &= step("clean-links", CleanLinkHooks::install);

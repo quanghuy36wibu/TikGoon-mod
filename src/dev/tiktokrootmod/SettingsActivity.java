@@ -310,6 +310,8 @@ public final class SettingsActivity extends Activity {
 
         section(p, "Nhật ký");
         LinearLayout logs = card(p);
+        toggle(logs, "Ghi nhật ký hook", "Chỉ bật khi cần gửi lỗi. Tắt để TikTok nhẹ hơn (cần mở lại TikTok)",
+                "hook_log", false);
         action(logs, "Xem nhật ký hook", "Đọc nhật ký module ghi trong TikTok (cần root), có nút sao chép", this::showHookLog);
 
         section(p, "Tải media");
@@ -1289,7 +1291,7 @@ public final class SettingsActivity extends Activity {
                 "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim", "disable_double_tap_like"}) {
+                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim", "disable_double_tap_like", "hook_log"}) {
             boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
                     key.equals("spoof_region") || key.equals("allow_screenshots") ||
                     key.equals("profile_background") || key.equals("disable_live_auto_translate");

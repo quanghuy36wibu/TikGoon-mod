@@ -32,6 +32,8 @@ final class DoubleTapHooks {
                 if (param.args.length != 1 || !(param.args[0] instanceof GestureDetector.OnDoubleTapListener)) return;
                 GestureDetector.OnDoubleTapListener original = (GestureDetector.OnDoubleTapListener) param.args[0];
                 if (original instanceof Blocker) return;
+                // Bỏ qua listener của chính Android (ví dụ ScaleGestureDetector dùng cho zoom), chỉ bọc listener của app.
+                if (original.getClass().getName().startsWith("android.view.")) return;
                 param.args[0] = new Blocker(original);
                 if (logged++ < 5)
                     HookLog.log("TikTokRootMod: double-tap listener wrapped: " + original.getClass().getName());
@@ -57,13 +59,13 @@ final class DoubleTapHooks {
                     boolean second = lastDown != 0 && time - lastDown < 300
                             && Math.hypot(event.getX() - lastX, event.getY() - lastY) < 100 * density;
                     swallowing = inVideoArea && second;
-                    if (touchLogs < 20) {
+                    if (Config.LOG_ENABLED && touchLogs < 20) {
                         touchLogs++;
                         HookLog.log("TikTokRootMod: touch down " + (int) event.getX() + "," + (int) event.getY()
                                 + " video=" + inVideoArea + " second=" + second
                                 + " activity=" + param.thisObject.getClass().getSimpleName());
                     }
-                    if (swallowing && swallowLogs++ < 10) HookLog.log("TikTokRootMod: swallowed second tap");
+                    if (Config.LOG_ENABLED && swallowing && swallowLogs++ < 10) HookLog.log("TikTokRootMod: swallowed second tap");
                     lastDown = swallowing ? 0 : time;      // chạm lần 3 tính lại như lần 1
                     lastX = event.getX();
                     lastY = event.getY();
