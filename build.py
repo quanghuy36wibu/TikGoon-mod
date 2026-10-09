@@ -21,6 +21,7 @@ TOOLS = SDK / "build-tools/36.1.0"
 ANDROID_JAR = SDK / "platforms/android-36/android.jar"
 XPOSED_URL = "https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar"
 XPOSED_SHA256 = "f48c635f1c7469fdec0e00ad2ea0b7a6b2f5b55065784a35b7ca3a84615e8e25"
+FLATBUFFERS_URL = "https://repo.maven.apache.org/maven2/com/google/flatbuffers/flatbuffers-java/23.5.26/flatbuffers-java-23.5.26.jar"
 
 
 def run(*args: object) -> None:
@@ -38,19 +39,30 @@ def main() -> None:
     if hashlib.sha256(api.read_bytes()).hexdigest() != XPOSED_SHA256:
         raise SystemExit("Xposed API jar checksum mismatch")
 
+    # DexKit's Android artifact is supplied as its classes.jar plus JNI libs.
+    dexkit_jar = ROOT / "libs/dexkit-classes.jar"
+    kotlin_jar = ROOT / "libs/kotlin-stdlib.jar"
+    flatbuffers_jar = ROOT / "libs/flatbuffers-java-23.5.26.jar"
+    if not flatbuffers_jar.exists():
+        urllib.request.urlretrieve(FLATBUFFERS_URL, flatbuffers_jar)
+    for dependency in (dexkit_jar, kotlin_jar, flatbuffers_jar):
+        if not dependency.is_file():
+            raise SystemExit(f"Missing DexKit dependency: {dependency}")
+
     classes = BUILD / "classes"
     classes.mkdir(exist_ok=True)
     sources = sorted((ROOT / "src").rglob("*.java"))
     if not sources:
         raise SystemExit("No Java sources")
+    dependency_jars = (str(ANDROID_JAR), str(api), str(dexkit_jar), str(kotlin_jar), str(flatbuffers_jar))
     run(JDK / "bin/javac.exe", "-source", "8", "-target", "8", "-encoding", "UTF-8",
-        "-cp", os.pathsep.join((str(ANDROID_JAR), str(api))), "-d", classes, *sources)
+        "-cp", os.pathsep.join(dependency_jars), "-d", classes, *sources)
     class_jar = BUILD / "classes.jar"
     run(JDK / "bin/jar.exe", "cf", class_jar, "-C", classes, ".")
     dex_dir = BUILD / "dex"
     dex_dir.mkdir(exist_ok=True)
     run(TOOLS / "d8.bat", "--min-api", "23", "--lib", ANDROID_JAR, "--classpath", api,
-        "--output", dex_dir, class_jar)
+        "--output", dex_dir, class_jar, dexkit_jar, kotlin_jar, flatbuffers_jar)
 
     unsigned = BUILD / "unsigned.apk"
     run(TOOLS / "aapt.exe", "package", "-f", "-M", ROOT / "AndroidManifest.xml",
@@ -61,6 +73,10 @@ def main() -> None:
         for asset in (ROOT / "assets").rglob("*"):
             if asset.is_file():
                 apk.write(asset, "assets/" + asset.relative_to(ROOT / "assets").as_posix())
+        for abi_dir in (ROOT / "libs").iterdir():
+            if abi_dir.is_dir():
+                for native in abi_dir.glob("*.so"):
+                    apk.write(native, "lib/" + abi_dir.name + "/" + native.name)
     aligned = BUILD / "aligned.apk"
     run(TOOLS / "zipalign.exe", "-f", "4", unsigned, aligned)
     release_mode = os.environ.get("TIKGOON_RELEASE") == "1"
