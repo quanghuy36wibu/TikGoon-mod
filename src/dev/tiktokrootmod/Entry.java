@@ -3,6 +3,8 @@ package dev.tiktokrootmod;
 import android.app.Application;
 import android.content.Context;
 
+import dev.tiktokrootmod.dexkit.DexKitRuntime;
+
 import java.io.File;
 import java.io.FileOutputStream;
 
@@ -16,6 +18,12 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 public final class Entry implements IXposedHookLoadPackage {
     private static final String TARGET = "com.ss.android.ugc.trill";
     private static final String OWN = "dev.tiktokrootmod";
+    private static volatile DexKitRuntime dexKitRuntime;
+
+    /** Shared DexKit runtime for hook groups that need dynamic class/method lookup. */
+    public static DexKitRuntime getDexKitRuntime() {
+        return dexKitRuntime;
+    }
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
@@ -33,7 +41,9 @@ public final class Entry implements IXposedHookLoadPackage {
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
                     try {
                         Config.load((Context) hook.args[0]);
-                        HookLog.init((Context) hook.args[0]);
+                        Context context = (Context) hook.args[0];
+                        HookLog.init(context);
+                        initializeDexKit(context);
                         boolean ok = true;
                         ok &= step("feed", () -> FeedHooks.install(param.classLoader));
                         if (Config.CLEAN_SHARE_LINKS) ok &= step("clean-links", CleanLinkHooks::install);
@@ -59,6 +69,20 @@ public final class Entry implements IXposedHookLoadPackage {
             });
         } catch (Throwable error) {
             HookLog.log("TikTokRootMod: hook setup failed");
+            HookLog.log(error);
+        }
+    }
+
+    /** Initialize one process-scoped bridge against the installed TikTok APK. */
+    private static synchronized void initializeDexKit(Context context) {
+        if (dexKitRuntime != null) return;
+        try {
+            String apkPath = context.getApplicationInfo().sourceDir;
+            dexKitRuntime = DexKitRuntime.open(apkPath);
+            HookLog.log("TikGoon: DexKit ready; dex count=" + dexKitRuntime.getDexCount());
+        } catch (Throwable error) {
+            // DexKit is optional during rollout: keep the existing static hooks alive.
+            HookLog.log("TikGoon: DexKit initialization failed; continuing with existing hooks");
             HookLog.log(error);
         }
     }
