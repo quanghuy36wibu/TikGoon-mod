@@ -6,6 +6,8 @@ on:
     branches: ['**']
     paths:
       - 'src/**'
+      - 'libs/**'
+      - 'DEXKIT-INTEGRATION.md'
       - 'res/**'
       - 'assets/**'
       - 'AndroidManifest.xml'
