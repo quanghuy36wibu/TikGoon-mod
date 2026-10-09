@@ -68,8 +68,17 @@ def main() -> None:
     run(TOOLS / "aapt.exe", "package", "-f", "-M", ROOT / "AndroidManifest.xml",
         "-S", ROOT / "res",
         "-I", ANDROID_JAR, "-F", unsigned)
+    # D8 may emit classes2.dex and beyond when the dependency graph grows.
+    dex_files = sorted(
+        dex_dir.glob("classes*.dex"),
+        key=lambda path: (1 if path.stem == "classes" else int(path.stem.removeprefix("classes"))),
+    )
+    if not dex_files or not (dex_dir / "classes.dex").is_file():
+        raise SystemExit("D8 did not produce classes.dex")
+
     with zipfile.ZipFile(unsigned, "a") as apk:
-        apk.write(dex_dir / "classes.dex", "classes.dex")
+        for dex_file in dex_files:
+            apk.write(dex_file, dex_file.name)
         for asset in (ROOT / "assets").rglob("*"):
             if asset.is_file():
                 apk.write(asset, "assets/" + asset.relative_to(ROOT / "assets").as_posix())
