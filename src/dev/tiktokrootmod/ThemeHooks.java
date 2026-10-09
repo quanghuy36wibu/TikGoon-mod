@@ -72,7 +72,7 @@ final class ThemeHooks {
                 themeComment((View) param.thisObject);
             }
         });
-        XposedBridge.log("TikTokRootMod: dark-background theme hook enabled");
+        HookLog.log("TikTokRootMod: dark-background theme hook enabled");
     }
 
     private static void themeComment(View view) {
@@ -87,7 +87,7 @@ final class ThemeHooks {
             if (panel == null) panel = findCommentPanel(view, true, null);
             if (panel == null) {
                 if (commentLogs++ < 3)
-                    XposedBridge.log("TikTokRootMod: comment title found but no panel matched: " + chain);
+                    HookLog.log("TikTokRootMod: comment title found but no panel matched: " + chain);
                 return;
             }
             suppressAncestors(panel);
@@ -196,7 +196,7 @@ final class ThemeHooks {
                 }
             }
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: clip comment overlay: " + error);
+            HookLog.log("TikTokRootMod: clip comment overlay: " + error);
         }
     }
 
@@ -249,7 +249,7 @@ final class ThemeHooks {
             panel.postDelayed(() -> clipOverlays(panel, overlays), 300);
             panel.postDelayed(() -> clipOverlays(panel, overlays), 900);
         }
-        XposedBridge.log("TikTokRootMod: comment panel background themed");
+        HookLog.log("TikTokRootMod: comment panel background themed");
     }
 
     private static void consider(View view) {
@@ -280,11 +280,11 @@ final class ThemeHooks {
                     StringBuilder hierarchy = new StringBuilder();
                     for (Class<?> type = view.getClass(); type != null && type != View.class;
                          type = type.getSuperclass()) hierarchy.append(type.getSimpleName()).append(" > ");
-                    XposedBridge.log("TikTokRootMod: replaced dark background " + hierarchy +
+                    HookLog.log("TikTokRootMod: replaced dark background " + hierarchy +
                             view.getWidth() + "x" + view.getHeight());
                 }
             } catch (Throwable error) {
-                XposedBridge.log("TikTokRootMod: background theme: " + error);
+                HookLog.log("TikTokRootMod: background theme: " + error);
             }
         });
     }

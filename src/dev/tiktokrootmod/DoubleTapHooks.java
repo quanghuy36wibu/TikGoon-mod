@@ -20,6 +20,9 @@ import de.robv.android.xposed.XposedBridge;
  */
 final class DoubleTapHooks {
     private static int logged;
+    private static int touchLogs;
+    private static int swallowLogs;
+    private static int blockLogs;
 
     private DoubleTapHooks() {}
 
@@ -31,7 +34,7 @@ final class DoubleTapHooks {
                 if (original instanceof Blocker) return;
                 param.args[0] = new Blocker(original);
                 if (logged++ < 5)
-                    XposedBridge.log("TikTokRootMod: double-tap listener wrapped: " + original.getClass().getName());
+                    HookLog.log("TikTokRootMod: double-tap listener wrapped: " + original.getClass().getName());
             }
         });
         XposedBridge.hookAllMethods(Activity.class, "dispatchTouchEvent", new XC_MethodHook() {
@@ -54,6 +57,13 @@ final class DoubleTapHooks {
                     boolean second = lastDown != 0 && time - lastDown < 300
                             && Math.hypot(event.getX() - lastX, event.getY() - lastY) < 100 * density;
                     swallowing = inVideoArea && second;
+                    if (touchLogs < 20) {
+                        touchLogs++;
+                        HookLog.log("TikTokRootMod: touch down " + (int) event.getX() + "," + (int) event.getY()
+                                + " video=" + inVideoArea + " second=" + second
+                                + " activity=" + param.thisObject.getClass().getSimpleName());
+                    }
+                    if (swallowing && swallowLogs++ < 10) HookLog.log("TikTokRootMod: swallowed second tap");
                     lastDown = swallowing ? 0 : time;      // chạm lần 3 tính lại như lần 1
                     lastX = event.getX();
                     lastY = event.getY();
@@ -64,7 +74,7 @@ final class DoubleTapHooks {
                 }
             }
         });
-        XposedBridge.log("TikTokRootMod: double-tap like disabled");
+        HookLog.log("TikTokRootMod: double-tap like disabled");
     }
 
     private static final class Blocker implements GestureDetector.OnDoubleTapListener {
@@ -79,6 +89,8 @@ final class DoubleTapHooks {
         }
 
         @Override public boolean onDoubleTap(MotionEvent event) {
+            if (blockLogs++ < 5)
+                HookLog.log("TikTokRootMod: blocked onDoubleTap of " + base.getClass().getName());
             return false;
         }
 

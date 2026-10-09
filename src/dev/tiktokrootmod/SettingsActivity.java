@@ -3,6 +3,8 @@ package dev.tiktokrootmod;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
@@ -75,6 +77,7 @@ public final class SettingsActivity extends Activity {
     private static final ExecutorService SAVES = Executors.newSingleThreadExecutor();
     private static final ExecutorService ROOT = Executors.newSingleThreadExecutor();
     private static final String TIKTOK = "com.ss.android.ugc.trill";
+    private static final String LOG_FILE = "/data/user/0/" + TIKTOK + "/files/tiktokrootmod_log";
     private static final String STATUS_FILE = "/data/user/0/" + TIKTOK + "/files/tiktokrootmod_status";
     private static final int PICK_THEME_IMAGE = 701;
     private static final int PICK_LAUNCHER_ICON = 702;
@@ -304,6 +307,10 @@ public final class SettingsActivity extends Activity {
                 "live_monitor", false, false);
         toggle(system, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
                 "auto_restart", false, false);
+
+        section(p, "Nhật ký");
+        LinearLayout logs = card(p);
+        action(logs, "Xem nhật ký hook", "Đọc nhật ký module ghi trong TikTok (cần root), có nút sao chép", this::showHookLog);
 
         section(p, "Tải media");
         LinearLayout media = card(p);
@@ -769,6 +776,55 @@ public final class SettingsActivity extends Activity {
         handler.removeCallbacks(restartTask);
         handler.postDelayed(restartTask, 3000);
         return true;
+    }
+
+    private void showHookLog() {
+        Toast.makeText(this, "Đang đọc nhật ký…", Toast.LENGTH_SHORT).show();
+        ROOT.execute(() -> {
+            String content;
+            try {
+                Process process = new ProcessBuilder("su", "-c", "tail -n 200 " + LOG_FILE + " 2>/dev/null")
+                        .redirectErrorStream(true).start();
+                if (!process.waitFor(15, TimeUnit.SECONDS)) {
+                    process.destroy();
+                    content = "su không phản hồi.";
+                } else {
+                    StringBuilder builder = new StringBuilder();
+                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+                        String line;
+                        while ((line = reader.readLine()) != null) builder.append(line).append('\n');
+                    }
+                    content = builder.toString().trim();
+                    if (content.isEmpty())
+                        content = "Chưa có nhật ký. Bật module trong LSPosed, mở TikTok, thử chạm đúp vài lần rồi xem lại.";
+                }
+            } catch (Exception error) {
+                content = "Không đọc được nhật ký: " + error;
+            }
+            final String shown = content;
+            runOnUiThread(() -> showLogDialog(shown));
+        });
+    }
+
+    private void showLogDialog(String shown) {
+        ScrollView scroll = new ScrollView(this);
+        TextView view = text(shown, 11, TEXT);
+        view.setTypeface(Typeface.MONOSPACE);
+        view.setTextIsSelectable(true);
+        view.setPadding(dp(20), dp(12), dp(20), dp(12));
+        scroll.addView(view);
+        dialog().setTitle("Nhật ký hook").setView(scroll)
+                .setPositiveButton("Sao chép", (d, w) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    clipboard.setPrimaryClip(ClipData.newPlainText("TikGoon log", shown));
+                    Toast.makeText(this, "Đã sao chép nhật ký.", Toast.LENGTH_SHORT).show();
+                })
+                .setNeutralButton("Xóa", (d, w) -> ROOT.execute(() -> {
+                    try {
+                        new ProcessBuilder("su", "-c", "rm -f " + LOG_FILE).start().waitFor(10, TimeUnit.SECONDS);
+                    } catch (Exception ignored) { }
+                }))
+                .setNegativeButton("Đóng", null).show();
     }
 
     private void confirmRestart() {

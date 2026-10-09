@@ -32,6 +32,7 @@ public final class Entry implements IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(Application.class, "attach", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
                     try {
+                        HookLog.init((Context) hook.args[0]);
                         Config.load((Context) hook.args[0]);
                         boolean ok = true;
                         ok &= step("feed", () -> FeedHooks.install(param.classLoader));
@@ -47,18 +48,18 @@ public final class Entry implements IXposedHookLoadPackage {
                         ok &= step("theme", ThemeHooks::install);
                         ok &= step("live-translation", () -> LiveTranslationHooks.install(param.classLoader));
                         if (Config.DISABLE_DOUBLE_TAP_LIKE) ok &= step("double-tap", DoubleTapHooks::install);
-                        XposedBridge.log("TikTokRootMod: hooks installed for " + TARGET);
+                        HookLog.log("TikTokRootMod: hooks installed for " + TARGET);
                         writeStatus((Context) hook.args[0], ok);
                     } catch (Throwable error) {
-                        XposedBridge.log("TikTokRootMod: hook setup failed");
-                        XposedBridge.log(error);
+                        HookLog.log("TikTokRootMod: hook setup failed");
+                        HookLog.log(error);
                         writeStatus((Context) hook.args[0], false);
                     }
                 }
             });
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: hook setup failed");
-            XposedBridge.log(error);
+            HookLog.log("TikTokRootMod: hook setup failed");
+            HookLog.log(error);
         }
     }
 
@@ -68,10 +69,11 @@ public final class Entry implements IXposedHookLoadPackage {
     private static boolean step(String name, Step step) {
         try {
             step.run();
+            HookLog.log("TikTokRootMod: hook group '" + name + "' ok");
             return true;
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: hook group '" + name + "' failed");
-            XposedBridge.log(error);
+            HookLog.log("TikTokRootMod: hook group '" + name + "' failed");
+            HookLog.log(error);
             return false;
         }
     }
@@ -86,7 +88,7 @@ public final class Entry implements IXposedHookLoadPackage {
                         }
                     });
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: self hook failed: " + error);
+            HookLog.log("TikTokRootMod: self hook failed: " + error);
         }
     }
 
