@@ -7,6 +7,11 @@ import java.util.List;
 import java.util.Locale;
 
 import de.robv.android.xposed.XC_MethodHook;
+import dev.tiktokrootmod.dexkit.DexKitRuntime;
+import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.enums.StringMatchType;
+import org.luckypray.dexkit.result.ClassDataList;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 
@@ -25,12 +30,11 @@ final class FeedHooks {
     private FeedHooks() {}
 
     static void install(ClassLoader loader) {
-        Class<?> feedClass =
-                XposedHelpers.findClassIfExists(FEED, loader);
-        awemeClass =
-                XposedHelpers.findClassIfExists(AWEME, loader);
-        extClass =
-                XposedHelpers.findClassIfExists(EXT, loader);
+        // DexKit is now used by the feed hook to resolve its model classes.
+        // Keep the legacy name lookup as a safe fallback if DexKit is unavailable.
+        Class<?> feedClass = resolveClass(FEED, loader, "feed model");
+        awemeClass = resolveClass(AWEME, loader, "Aweme model");
+        extClass = resolveClass(EXT, loader, "Aweme extensions");
 
         if (feedClass == null || awemeClass == null) {
             XposedBridge.log(
@@ -85,6 +89,36 @@ final class FeedHooks {
             hookEmptyListGetter(feedClass, "getPreloadAds");
             hookFalseGetter(feedClass, "isHasAd");
         }
+    }
+
+    /** Resolve a feed model through DexKit first, then fall back to the old lookup. */
+    private static Class<?> resolveClass(
+            String className,
+            ClassLoader loader,
+            String label) {
+        DexKitRuntime runtime = Entry.getDexKitRuntime();
+        if (runtime != null) {
+            try {
+                ClassDataList matches = runtime.getBridge().findClass(
+                        FindClass.create().matcher(
+                                new ClassMatcher().className(
+                                        className, StringMatchType.Equals, false)));
+                if (matches != null && !matches.isEmpty()) {
+                    Class<?> resolved = matches.get(0).getInstance(loader);
+                    if (resolved != null) {
+                        XposedBridge.log("TikGoon: DexKit resolved " + label
+                                + " -> " + resolved.getName());
+                        return resolved;
+                    }
+                }
+                XposedBridge.log("TikGoon: DexKit found no match for " + label
+                        + "; trying legacy class name");
+            } catch (Throwable error) {
+                XposedBridge.log("TikGoon: DexKit lookup failed for " + label
+                        + "; trying legacy class name: " + error);
+            }
+        }
+        return XposedHelpers.findClassIfExists(className, loader);
     }
 
     private static void hookListGetter(
