@@ -14,6 +14,17 @@ public final class Config {
     private Config() {}
 
     public static boolean HIDE_ADS = true;
+    public static boolean HIDE_PROMO = true;
+    public static boolean HIDE_FEED_LIVE = false;
+    public static boolean HIDE_FEED_SEARCH = false;
+    public static boolean HIDE_FEED_FOLLOW = false;
+    public static boolean HIDE_FEED_SAVE = false;
+    public static boolean STOP_LOOP = false;
+    public static boolean HIDE_TAKO = false;
+    public static boolean DEXKIT_ENABLED = false;
+    public static boolean NO_LONG_LIKE = false;
+    public static boolean NO_LONG_SHARE = false;
+    public static int DEFAULT_SPEED = 0;   // 0 = tắt; 125, 150, 200 = phần trăm
     public static boolean HIDE_LIVES = false;
     public static boolean HIDE_PHOTOS = false;
     public static boolean HIDE_STORIES = false;
@@ -58,6 +69,17 @@ public final class Config {
             }
             JSONObject values = new JSONObject(new String(Base64.decode(encoded, Base64.DEFAULT), "UTF-8"));
             HIDE_ADS = values.optBoolean("hide_ads", HIDE_ADS);
+            HIDE_PROMO = values.optBoolean("hide_promo", HIDE_PROMO);
+            HIDE_FEED_LIVE = values.optBoolean("hide_feed_live", HIDE_FEED_LIVE);
+            HIDE_FEED_SEARCH = values.optBoolean("hide_feed_search", HIDE_FEED_SEARCH);
+            HIDE_FEED_FOLLOW = values.optBoolean("hide_feed_follow", HIDE_FEED_FOLLOW);
+            HIDE_FEED_SAVE = values.optBoolean("hide_feed_save", HIDE_FEED_SAVE);
+            STOP_LOOP = values.optBoolean("stop_loop", STOP_LOOP);
+            HIDE_TAKO = values.optBoolean("hide_tako", HIDE_TAKO);
+            DEXKIT_ENABLED = values.optBoolean("dexkit_enabled", DEXKIT_ENABLED);
+            NO_LONG_LIKE = values.optBoolean("no_long_like", NO_LONG_LIKE);
+            NO_LONG_SHARE = values.optBoolean("no_long_share", NO_LONG_SHARE);
+            DEFAULT_SPEED = Math.max(0, Math.min(300, values.optInt("default_speed", DEFAULT_SPEED)));
             HIDE_LIVES = values.optBoolean("hide_lives", HIDE_LIVES);
             HIDE_PHOTOS = values.optBoolean("hide_photos", HIDE_PHOTOS);
             HIDE_STORIES = values.optBoolean("hide_stories", HIDE_STORIES);

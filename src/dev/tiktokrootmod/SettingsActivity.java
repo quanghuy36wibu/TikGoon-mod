@@ -198,6 +198,7 @@ public final class SettingsActivity extends Activity {
         toggle(feed, "Ẩn story", null, "hide_stories", false);
         toggle(feed, "Ẩn mini-series", null, "hide_series", false);
         toggle(feed, "Ẩn nội dung trả phí", null, "hide_paid", false);
+        toggle(feed, "Ẩn nút quà, thưởng nổi", "Ẩn biểu tượng \"Nhấp ngay có thưởng\" ở góc trái trên", "hide_promo", true);
 
         section(p, "Chung");
         LinearLayout general = card(p);
@@ -215,6 +216,16 @@ public final class SettingsActivity extends Activity {
         toggle(video, "Giảm lưu ảnh OLED", "Làm mờ, dịch chuyển lớp phủ", "anti_burnout", false);
         toggle(video, "Tắt chạm 2 lần để thả tim", "Chạm đúp không còn thả tim, vẫn dùng được nút tim",
                 "disable_double_tap_like", false);
+        toggle(video, "Dừng lặp video", "Xem xong thì dừng, không tự phát lại", "stop_loop", false);
+        LinearLayout speedRow = action(video, "Tốc độ phát mặc định", speedLabel(prefs.getInt("default_speed", 0)), null);
+        TextView speedSub = (TextView) speedRow.getTag();
+        speedRow.setOnClickListener(v -> dialog().setTitle("Tốc độ phát mặc định")
+                .setItems(new String[]{"Tắt (mặc định TikTok)", "1,25x", "1,5x", "2x"}, (d, which) -> {
+                    int value = new int[]{0, 125, 150, 200}[which];
+                    prefs.edit().putInt("default_speed", value).apply();
+                    speedSub.setText(speedLabel(value));
+                    syncSettings();
+                }).show());
         note(video, "Khi bật cả hai, Tối giản ẩn lớp phủ nên hiệu ứng làm mờ chỉ thấy rõ khi tắt Tối giản.");
         LinearLayout fontRow = action(video, "Font TikTok", prefs.getString("font_family", "default"), null);
         TextView fontSub = (TextView) fontRow.getTag();
@@ -225,6 +236,17 @@ public final class SettingsActivity extends Activity {
                     fontSub.setText(family);
                     syncSettings();
                 }).show());
+
+        section(p, "Nút trên feed");
+        LinearLayout buttons = card(p);
+        toggle(buttons, "Ẩn nút LIVE", "Góc trên bên trái", "hide_feed_live", false);
+        toggle(buttons, "Ẩn nút tìm kiếm", "Góc trên bên phải", "hide_feed_search", false);
+        toggle(buttons, "Ẩn dấu + follow", "Dưới ảnh đại diện người đăng", "hide_feed_follow", false);
+        toggle(buttons, "Ẩn nút lưu", "Cột nút bên phải", "hide_feed_save", false);
+        toggle(buttons, "Ẩn bong bóng Tako AI", "Bong bóng hỏi đáp AI của TikTok", "hide_tako", false);
+        toggle(buttons, "Tắt giữ lâu nút tim", "Giữ nút tim không mở repost", "no_long_like", false);
+        toggle(buttons, "Tắt giữ lâu nút chia sẻ", "Giữ nút chia sẻ không mở chia sẻ nhanh", "no_long_share", false);
+        note(buttons, "Nhận diện theo mô tả và vị trí nút. Nếu nút không biến mất, bật Ghi nhật ký hook rồi gửi nhật ký cho tôi.");
 
         section(p, "Phạm vi nền");
         LinearLayout scope = card(p);
@@ -307,6 +329,8 @@ public final class SettingsActivity extends Activity {
                 "live_monitor", false, false);
         toggle(system, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
                 "auto_restart", false, false);
+        toggle(system, "Bật DexKit (thử nghiệm)", "Phân tích APK TikTok ở nền. Chưa hook nào dùng, nặng máy; chỉ bật khi cần thử",
+                "dexkit_enabled", false);
 
         section(p, "Nhật ký");
         LinearLayout logs = card(p);
@@ -778,6 +802,10 @@ public final class SettingsActivity extends Activity {
         handler.removeCallbacks(restartTask);
         handler.postDelayed(restartTask, 3000);
         return true;
+    }
+
+    private String speedLabel(int value) {
+        return value <= 0 ? "Tắt (mặc định TikTok)" : (value == 125 ? "1,25x" : value == 150 ? "1,5x" : value / 100 + "x");
     }
 
     private void showHookLog() {
@@ -1291,10 +1319,12 @@ public final class SettingsActivity extends Activity {
                 "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim", "disable_double_tap_like", "hook_log"}) {
+                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim", "disable_double_tap_like", "hook_log", "hide_promo", "hide_feed_live", "hide_feed_search",
+                "hide_feed_follow", "hide_feed_save", "stop_loop", "hide_tako", "no_long_like", "no_long_share", "dexkit_enabled"}) {
             boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
                     key.equals("spoof_region") || key.equals("allow_screenshots") ||
-                    key.equals("profile_background") || key.equals("disable_live_auto_translate");
+                    key.equals("profile_background") || key.equals("disable_live_auto_translate") ||
+                    key.equals("hide_promo");
             values.put(key, prefs.getBoolean(key, fallback));
         }
         values.put("region_iso", prefs.getString("region_iso", "kz"));
@@ -1302,6 +1332,7 @@ public final class SettingsActivity extends Activity {
         values.put("theme_color", prefs.getString("theme_color", "#FF2D55"));
         values.put("theme_color_opacity", prefs.getInt("theme_color_opacity", 0));
         values.put("comment_scrim_opacity", prefs.getInt("comment_scrim_opacity", 35));
+        values.put("default_speed", prefs.getInt("default_speed", 0));
         values.put("theme_image_opacity", prefs.getInt("theme_image_opacity", 0));
         values.put("theme_video_opacity", prefs.getInt("theme_video_opacity", 0));
         values.put("region_operator", prefs.getString("region_operator", "40101"));

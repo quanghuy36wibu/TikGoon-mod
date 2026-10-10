@@ -20,7 +20,7 @@ public final class Entry implements IXposedHookLoadPackage {
     private static final String OWN = "dev.tiktokrootmod";
     private static volatile DexKitRuntime dexKitRuntime;
 
-    /** Shared DexKit runtime for hook groups that need dynamic class/method lookup. */
+    /** Shared DexKit runtime cho các nhóm hook cần tìm lớp/hàm theo cấu trúc (null nếu chưa bật hoặc chưa sẵn sàng). */
     public static DexKitRuntime getDexKitRuntime() {
         return dexKitRuntime;
     }
@@ -41,9 +41,8 @@ public final class Entry implements IXposedHookLoadPackage {
                 @Override protected void afterHookedMethod(MethodHookParam hook) {
                     try {
                         Config.load((Context) hook.args[0]);
-                        Context context = (Context) hook.args[0];
-                        HookLog.init(context);
-                        initializeDexKit(context);
+                        HookLog.init((Context) hook.args[0]);
+                        if (Config.DEXKIT_ENABLED) startDexKit((Context) hook.args[0]);
                         boolean ok = true;
                         ok &= step("feed", () -> FeedHooks.install(param.classLoader));
                         if (Config.CLEAN_SHARE_LINKS) ok &= step("clean-links", CleanLinkHooks::install);
@@ -56,6 +55,12 @@ public final class Entry implements IXposedHookLoadPackage {
                         ok &= step("message", () -> MessageHooks.install(param.classLoader));
                         ok &= step("appearance", AppearanceHooks::install);
                         ok &= step("theme", ThemeHooks::install);
+                        if (Config.HIDE_PROMO) ok &= step("promo", PromoHooks::install);
+                        if (Config.HIDE_FEED_LIVE || Config.HIDE_FEED_SEARCH || Config.HIDE_FEED_FOLLOW || Config.HIDE_FEED_SAVE
+                                || Config.HIDE_TAKO || Config.NO_LONG_LIKE || Config.NO_LONG_SHARE)
+                            ok &= step("feed-buttons", FeedButtonHooks::install);
+                        if (Config.STOP_LOOP || Config.DEFAULT_SPEED > 0)
+                            ok &= step("playback", () -> PlaybackHooks.install(param.classLoader));
                         ok &= step("live-translation", () -> LiveTranslationHooks.install(param.classLoader));
                         if (Config.DISABLE_DOUBLE_TAP_LIKE) ok &= step("double-tap", DoubleTapHooks::install);
                         HookLog.log("TikTokRootMod: hooks installed for " + TARGET);
@@ -73,18 +78,24 @@ public final class Entry implements IXposedHookLoadPackage {
         }
     }
 
-    /** Initialize one process-scoped bridge against the installed TikTok APK. */
-    private static synchronized void initializeDexKit(Context context) {
-        if (dexKitRuntime != null) return;
-        try {
-            String apkPath = context.getApplicationInfo().sourceDir;
-            dexKitRuntime = DexKitRuntime.open(apkPath);
-            HookLog.log("TikGoon: DexKit ready; dex count=" + dexKitRuntime.getDexCount());
-        } catch (Throwable error) {
-            // DexKit is optional during rollout: keep the existing static hooks alive.
-            HookLog.log("TikGoon: DexKit initialization failed; continuing with existing hooks");
-            HookLog.log(error);
-        }
+    /** DexKit phân tích cả APK TikTok (rất nặng) nên chạy ở luồng nền, ưu tiên thấp, không chặn lúc mở app. */
+    private static void startDexKit(Context context) {
+        final String apkPath = context.getApplicationInfo().sourceDir;
+        Thread thread = new Thread(() -> {
+            synchronized (Entry.class) {
+                if (dexKitRuntime != null) return;
+                try {
+                    dexKitRuntime = DexKitRuntime.open(apkPath);
+                    HookLog.log("TikGoon: DexKit ready; dex count=" + dexKitRuntime.getDexCount());
+                } catch (Throwable error) {
+                    HookLog.log("TikGoon: DexKit initialization failed; continuing with existing hooks");
+                    HookLog.log(error);
+                }
+            }
+        }, "TikGoon-DexKit");
+        thread.setPriority(Thread.MIN_PRIORITY);
+        thread.setDaemon(true);
+        thread.start();
     }
 
     private interface Step { void run() throws Throwable; }
