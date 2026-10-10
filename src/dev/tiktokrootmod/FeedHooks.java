@@ -30,17 +30,22 @@ final class FeedHooks {
     private FeedHooks() {}
 
     static void install(ClassLoader loader) {
-        // DexKit is now used by the feed hook to resolve its model classes.
-        // Keep the legacy name lookup as a safe fallback if DexKit is unavailable.
+        HookLog.log("TikGoon: FeedHooks resolution started; DexKit runtime="
+                + (Entry.getDexKitRuntime() == null ? "unavailable" : "available"));
         Class<?> feedClass = resolveClass(FEED, loader, "feed model");
         awemeClass = resolveClass(AWEME, loader, "Aweme model");
         extClass = resolveClass(EXT, loader, "Aweme extensions");
 
         if (feedClass == null || awemeClass == null) {
-            XposedBridge.log(
-                    "TikTokRootMod: feed model not found; skipping");
+            HookLog.log("TikGoon: required feed class resolution failed; "
+                    + "feed=" + classState(feedClass)
+                    + ", aweme=" + classState(awemeClass)
+                    + "; feed hooks skipped");
             return;
         }
+        HookLog.log("TikGoon: required feed classes ready; feed="
+                + feedClass.getName() + ", aweme=" + awemeClass.getName()
+                + ", extensions=" + classState(extClass));
 
         hookListGetter(feedClass, "getAwemeList");
         hookListGetter(feedClass, "getItems");
@@ -77,11 +82,13 @@ final class FeedHooks {
         };
 
         for (String[] spec : otherFeeds) {
-            Class<?> optional =
-                    XposedHelpers.findClassIfExists(spec[0], loader);
-
+            Class<?> optional = resolveClass(
+                    spec[0], loader, "optional feed " + spec[0]);
             if (optional != null) {
                 hookListGetter(optional, spec[1]);
+            } else {
+                HookLog.log("TikGoon: optional feed unavailable; skipped "
+                        + spec[0] + "." + spec[1]);
             }
         }
 
@@ -91,13 +98,19 @@ final class FeedHooks {
         }
     }
 
-    /** Resolve a feed model through DexKit first, then fall back to the old lookup. */
+    /**
+     * Resolve by DexKit first, then use the original class-name lookup as a
+     * compatibility fallback. Logs explicitly identify the resolution source.
+     */
     private static Class<?> resolveClass(
             String className,
             ClassLoader loader,
             String label) {
         DexKitRuntime runtime = Entry.getDexKitRuntime();
-        if (runtime != null) {
+        if (runtime == null) {
+            HookLog.log("TikGoon: DexKit unavailable for " + label
+                    + "; attempting legacy lookup for " + className);
+        } else {
             try {
                 ClassDataList matches = runtime.getBridge().findClass(
                         FindClass.create().matcher(
@@ -106,19 +119,44 @@ final class FeedHooks {
                 if (matches != null && !matches.isEmpty()) {
                     Class<?> resolved = matches.get(0).getInstance(loader);
                     if (resolved != null) {
-                        XposedBridge.log("TikGoon: DexKit resolved " + label
+                        HookLog.log("TikGoon: DexKit RESOLVED " + label
                                 + " -> " + resolved.getName());
                         return resolved;
                     }
+                    HookLog.log("TikGoon: DexKit returned a class match but "
+                            + "could not load it for " + label
+                            + "; attempting legacy lookup for " + className);
+                } else {
+                    HookLog.log("TikGoon: DexKit NO MATCH for " + label
+                            + " (" + className + "); attempting legacy lookup");
                 }
-                XposedBridge.log("TikGoon: DexKit found no match for " + label
-                        + "; trying legacy class name");
             } catch (Throwable error) {
-                XposedBridge.log("TikGoon: DexKit lookup failed for " + label
-                        + "; trying legacy class name: " + error);
+                HookLog.log("TikGoon: DexKit ERROR for " + label
+                        + " (" + className + "); attempting legacy lookup");
+                HookLog.log(error);
             }
         }
-        return XposedHelpers.findClassIfExists(className, loader);
+
+        try {
+            Class<?> fallback = XposedHelpers.findClassIfExists(className, loader);
+            if (fallback != null) {
+                HookLog.log("TikGoon: LEGACY FALLBACK RESOLVED " + label
+                        + " -> " + fallback.getName());
+            } else {
+                HookLog.log("TikGoon: CLASS NOT FOUND " + label
+                        + "; DexKit and legacy lookup both failed for " + className);
+            }
+            return fallback;
+        } catch (Throwable error) {
+            HookLog.log("TikGoon: LEGACY LOOKUP ERROR for " + label
+                    + " (" + className + ")");
+            HookLog.log(error);
+            return null;
+        }
+    }
+
+    private static String classState(Class<?> type) {
+        return type == null ? "not found" : type.getName();
     }
 
     private static void hookListGetter(
