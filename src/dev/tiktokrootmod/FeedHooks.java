@@ -166,11 +166,18 @@ final class FeedHooks {
             String className,
             String getterName,
             ClassLoader loader) {
-        // Keep the existing class-name resolution as the authoritative choice,
-        // but run the structural probe as well so logs explain whether DexKit's
-        // structural matcher could independently find candidates.
+        // Prefer exact class-name resolution. When it succeeds, do not run a
+        // broad structural scan: many unrelated response/model classes expose
+        // the same List getter and can tie on generic Aweme scoring. Treating
+        // that diagnostic ambiguity as a resolution failure only creates noise.
         Class<?> named = resolveClass(
                 className, loader, "optional feed " + className);
+        if (named != null) {
+            HookLog.log("TikGoon: OPTIONAL FEED RESOLVED BY NAME optional feed="
+                    + className + " selected=" + named.getName()
+                    + " structuralFallback=skipped reason=exact class lookup succeeded");
+            return named;
+        }
 
         DexKitRuntime runtime = Entry.getDexKitRuntime();
         if (runtime == null) {
