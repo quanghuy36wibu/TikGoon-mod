@@ -166,20 +166,25 @@ final class FeedHooks {
             String className,
             String getterName,
             ClassLoader loader) {
+        // Keep the existing class-name resolution as the authoritative choice,
+        // but run the structural probe as well so logs explain whether DexKit's
+        // structural matcher could independently find candidates.
         Class<?> named = resolveClass(
                 className, loader, "optional feed " + className);
-        if (named != null) {
-            return named;
-        }
 
         DexKitRuntime runtime = Entry.getDexKitRuntime();
         if (runtime == null) {
-            return null;
+            HookLog.log("TikGoon: STRUCTURAL SKIPPED optional feed=" + className
+                    + " getter=" + getterName + " reason=DexKit runtime unavailable"
+                    + "; namedResolution=" + classState(named));
+            return named;
         }
 
         try {
-            HookLog.log("TikGoon: STRUCTURAL SEARCH STARTED for optional feed "
-                    + className + " getter=" + getterName);
+            HookLog.log("TikGoon: STRUCTURAL SEARCH START optional feed=" + className
+                    + " getter=" + getterName
+                    + " matcher=method-name-exact,return-type-exact-java.util.List,param-count=0"
+                    + " namedResolution=" + classState(named));
             ClassMatcher structure = new ClassMatcher().addMethod(
                     new MethodMatcher()
                             .name(getterName, StringMatchType.Equals, false)
@@ -187,29 +192,52 @@ final class FeedHooks {
                             .paramCount(0));
             ClassDataList matches = runtime.getBridge().findClass(
                     FindClass.create().matcher(structure));
-            if (matches == null || matches.isEmpty()) {
-                HookLog.log("TikGoon: STRUCTURAL NO MATCH for optional feed "
-                        + className + " getter=" + getterName);
-                return null;
+            int count = matches == null ? 0 : matches.size();
+            HookLog.log("TikGoon: STRUCTURAL QUERY RESULT optional feed="
+                    + className + " getter=" + getterName + " candidateCount=" + count);
+
+            if (count == 0) {
+                HookLog.log("TikGoon: STRUCTURAL NO MATCH optional feed=" + className
+                        + " getter=" + getterName
+                        + " reason=no method satisfied all matcher predicates; check exact"
+                        + " method name, return type java.util.List, and zero parameters");
+                if (named != null) {
+                    logGetterDiagnostics(named, getterName, "named class");
+                    HookLog.log("TikGoon: STRUCTURAL NOT REQUIRED FOR SELECTION optional feed="
+                            + className + " reason=named/legacy lookup succeeded");
+                }
+                return named;
             }
 
-            HookLog.log("TikGoon: STRUCTURAL CANDIDATES for optional feed "
-                    + className + " count=" + matches.size());
             Class<?> best = null;
             int bestScore = 0;
             boolean tied = false;
-            for (int i = 0; i < matches.size(); i++) {
-                Class<?> candidate;
+            for (int i = 0; i < count; i++) {
+                Class<?> candidate = null;
                 try {
                     candidate = matches.get(i).getInstance(loader);
-                } catch (Throwable ignored) {
-                    continue;
+                } catch (Throwable error) {
+                    HookLog.log("TikGoon: STRUCTURAL CANDIDATE LOAD FAILED optional feed="
+                            + className + " index=" + i + " error=" + error);
                 }
-                if (candidate == null || !hasListGetter(candidate, getterName)) {
+                if (candidate == null) {
+                    HookLog.log("TikGoon: STRUCTURAL CANDIDATE REJECTED optional feed="
+                            + className + " index=" + i + " reason=class instance unavailable");
                     continue;
                 }
 
-                int score = awemeContainerScore(candidate, getterName);
+                logGetterDiagnostics(candidate, getterName, "structural candidate index=" + i);
+                boolean listGetter = hasListGetter(candidate, getterName);
+                int score = listGetter ? awemeContainerScore(candidate, getterName) : 0;
+                HookLog.log("TikGoon: STRUCTURAL CANDIDATE SCORE optional feed="
+                        + className + " candidate=" + candidate.getName()
+                        + " listGetter=" + listGetter + " awemeContainerScore=" + score);
+                if (!listGetter) {
+                    HookLog.log("TikGoon: STRUCTURAL CANDIDATE REJECTED optional feed="
+                            + className + " candidate=" + candidate.getName()
+                            + " reason=reflection did not confirm public zero-arg List getter");
+                    continue;
+                }
                 if (score > bestScore) {
                     best = candidate;
                     bestScore = score;
@@ -221,20 +249,71 @@ final class FeedHooks {
             }
 
             if (best != null && bestScore > 0 && !tied) {
-                HookLog.log("TikGoon: DexKit STRUCTURAL RESOLVED optional feed "
-                        + className + " -> " + best.getName()
-                        + " (score=" + bestScore + ")");
+                HookLog.log("TikGoon: STRUCTURAL UNIQUE BEST optional feed=" + className
+                        + " candidate=" + best.getName() + " score=" + bestScore);
+                if (named != null) {
+                    HookLog.log("TikGoon: STRUCTURAL DIAGNOSTIC ONLY optional feed="
+                            + className + " selectedBy=named/legacy lookup selected="
+                            + named.getName() + " structuralCandidate=" + best.getName());
+                    return named;
+                }
+                HookLog.log("TikGoon: DexKit STRUCTURAL RESOLVED optional feed="
+                        + className + " -> " + best.getName() + " (score=" + bestScore + ")");
                 return best;
             }
-            HookLog.log("TikGoon: STRUCTURAL AMBIGUOUS/UNSAFE for optional feed "
-                    + className + "; bestScore=" + bestScore
-                    + ", tied=" + tied + "; skipping to avoid hooking wrong class");
+            HookLog.log("TikGoon: STRUCTURAL REJECTED ALL/AMBIGUOUS optional feed="
+                    + className + " bestCandidate=" + classState(best)
+                    + " bestScore=" + bestScore + " tied=" + tied
+                    + " reason=" + (tied ? "multiple candidates share best score"
+                            : "no candidate had a positive Aweme-container score"));
         } catch (Throwable error) {
-            HookLog.log("TikGoon: STRUCTURAL SEARCH ERROR for optional feed "
-                    + className);
+            HookLog.log("TikGoon: STRUCTURAL SEARCH ERROR optional feed=" + className
+                    + " getter=" + getterName + " exception=" + error);
             HookLog.log(error);
         }
-        return null;
+        return named;
+    }
+
+    /** Logs the exact reflected signature used to diagnose structural mismatches. */
+    private static void logGetterDiagnostics(
+            Class<?> type, String getterName, String source) {
+        if (type == null) return;
+        boolean foundName = false;
+        try {
+            for (Method method : type.getDeclaredMethods()) {
+                if (!getterName.equals(method.getName())) continue;
+                foundName = true;
+                HookLog.log("TikGoon: GETTER DIAGNOSTIC source=" + source
+                        + " class=" + type.getName()
+                        + " method=" + method.getName()
+                        + " return=" + method.getReturnType().getName()
+                        + " genericReturn=" + method.getGenericReturnType().getTypeName()
+                        + " params=" + method.getParameterTypes().length
+                        + " public=" + java.lang.reflect.Modifier.isPublic(method.getModifiers()));
+            }
+            if (!foundName) {
+                HookLog.log("TikGoon: GETTER DIAGNOSTIC source=" + source
+                        + " class=" + type.getName() + " getter=" + getterName
+                        + " result=not found in declared methods");
+            }
+        } catch (Throwable error) {
+            HookLog.log("TikGoon: GETTER DIAGNOSTIC ERROR class=" + type.getName()
+                    + " getter=" + getterName + " error=" + error);
+        }
+        try {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                String generic = field.getGenericType().getTypeName();
+                if (containsAwemeType(generic) || field.getName().toLowerCase(Locale.ROOT).contains("aweme")) {
+                    HookLog.log("TikGoon: FIELD DIAGNOSTIC class=" + type.getName()
+                            + " field=" + field.getName()
+                            + " type=" + field.getType().getName()
+                            + " genericType=" + generic);
+                }
+            }
+        } catch (Throwable error) {
+            HookLog.log("TikGoon: FIELD DIAGNOSTIC ERROR class=" + type.getName()
+                    + " error=" + error);
+        }
     }
 
     private static boolean hasListGetter(Class<?> type, String getterName) {
