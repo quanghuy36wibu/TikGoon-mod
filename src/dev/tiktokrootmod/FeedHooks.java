@@ -10,6 +10,7 @@ import de.robv.android.xposed.XC_MethodHook;
 import dev.tiktokrootmod.dexkit.DexKitRuntime;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.query.enums.StringMatchType;
 import org.luckypray.dexkit.result.ClassDataList;
 import de.robv.android.xposed.XposedBridge;
@@ -82,8 +83,8 @@ final class FeedHooks {
         };
 
         for (String[] spec : otherFeeds) {
-            Class<?> optional = resolveClass(
-                    spec[0], loader, "optional feed " + spec[0]);
+            Class<?> optional = resolveOptionalFeed(
+                    spec[0], spec[1], loader);
             if (optional != null) {
                 hookListGetter(optional, spec[1]);
             } else {
@@ -153,6 +154,147 @@ final class FeedHooks {
             HookLog.log(error);
             return null;
         }
+    }
+
+    /**
+     * Resolve optional feed responses without relying exclusively on their
+     * package/class names. The structural query requires a no-argument getter
+     * returning java.util.List; candidates are then checked for an Aweme-like
+     * generic element type before any hook is installed.
+     */
+    private static Class<?> resolveOptionalFeed(
+            String className,
+            String getterName,
+            ClassLoader loader) {
+        Class<?> named = resolveClass(
+                className, loader, "optional feed " + className);
+        if (named != null) {
+            return named;
+        }
+
+        DexKitRuntime runtime = Entry.getDexKitRuntime();
+        if (runtime == null) {
+            return null;
+        }
+
+        try {
+            ClassMatcher structure = new ClassMatcher().addMethod(
+                    new MethodMatcher()
+                            .name(getterName, StringMatchType.Equals, false)
+                            .returnType("java.util.List", StringMatchType.Equals, false)
+                            .paramCount(0));
+            ClassDataList matches = runtime.getBridge().findClass(
+                    FindClass.create().matcher(structure));
+            if (matches == null || matches.isEmpty()) {
+                HookLog.log("TikGoon: STRUCTURAL NO MATCH for optional feed "
+                        + className + " getter=" + getterName);
+                return null;
+            }
+
+            Class<?> best = null;
+            int bestScore = 0;
+            boolean tied = false;
+            for (int i = 0; i < matches.size(); i++) {
+                Class<?> candidate;
+                try {
+                    candidate = matches.get(i).getInstance(loader);
+                } catch (Throwable ignored) {
+                    continue;
+                }
+                if (candidate == null || !hasListGetter(candidate, getterName)) {
+                    continue;
+                }
+
+                int score = awemeContainerScore(candidate, getterName);
+                if (score > bestScore) {
+                    best = candidate;
+                    bestScore = score;
+                    tied = false;
+                } else if (score > 0 && score == bestScore
+                        && best != null && !best.equals(candidate)) {
+                    tied = true;
+                }
+            }
+
+            if (best != null && bestScore > 0 && !tied) {
+                HookLog.log("TikGoon: DexKit STRUCTURAL RESOLVED optional feed "
+                        + className + " -> " + best.getName()
+                        + " (score=" + bestScore + ")");
+                return best;
+            }
+            HookLog.log("TikGoon: STRUCTURAL AMBIGUOUS/UNSAFE for optional feed "
+                    + className + "; bestScore=" + bestScore
+                    + ", tied=" + tied + "; skipping to avoid hooking wrong class");
+        } catch (Throwable error) {
+            HookLog.log("TikGoon: STRUCTURAL SEARCH ERROR for optional feed "
+                    + className);
+            HookLog.log(error);
+        }
+        return null;
+    }
+
+    private static boolean hasListGetter(Class<?> type, String getterName) {
+        try {
+            Method method = type.getMethod(getterName);
+            return method.getParameterTypes().length == 0
+                    && List.class.isAssignableFrom(method.getReturnType());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static int awemeContainerScore(Class<?> type, String getterName) {
+        boolean getterHasAweme = false;
+        boolean fieldHasAweme = false;
+        try {
+            Method getter = type.getMethod(getterName);
+            getterHasAweme = containsAwemeType(
+                    getter.getGenericReturnType().getTypeName());
+        } catch (Throwable ignored) {
+            return 0;
+        }
+
+        try {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                if (containsAwemeType(field.getGenericType().getTypeName())) {
+                    fieldHasAweme = true;
+                    break;
+                }
+            }
+        } catch (Throwable ignored) {
+            // Generic metadata is optional.
+        }
+
+        String lower = type.getName().toLowerCase(Locale.ROOT);
+        int nameHints = 0;
+        for (String hint : new String[] {
+                "feed", "response", "aweme", "video", "forward",
+                "music", "friend", "relation", "footnote" }) {
+            if (lower.contains(hint)) {
+                nameHints++;
+            }
+        }
+
+        // Generic List<Aweme> is the strongest signal. When generic metadata
+        // is erased on the getter, an Aweme-typed field plus the expected
+        // getter is accepted, but competing candidates are still rejected.
+        if (getterHasAweme) {
+            return 10 + nameHints;
+        }
+        if (fieldHasAweme) {
+            return ("getAwemeList".equals(getterName) ? 8 : 6) + nameHints;
+        }
+        return 0;
+    }
+
+    private static boolean containsAwemeType(String typeName) {
+        if (typeName == null) {
+            return false;
+        }
+        String normalized = typeName.toLowerCase(Locale.ROOT);
+        return normalized.contains("aweme")
+                || (awemeClass != null
+                    && normalized.contains(awemeClass.getName().toLowerCase(Locale.ROOT)));
     }
 
     private static String classState(Class<?> type) {
@@ -525,4 +667,4 @@ final class FeedHooks {
                 ? ((Number) value).longValue()
                 : 0;
     }
-                                    }
+}
