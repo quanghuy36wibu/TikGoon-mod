@@ -42,9 +42,15 @@ public final class Entry implements IXposedHookLoadPackage {
                     try {
                         Config.load((Context) hook.args[0]);
                         HookLog.init((Context) hook.args[0]);
-                        if (Config.DEXKIT_ENABLED) startDexKit((Context) hook.args[0]);
                         boolean ok = true;
-                        ok &= step("feed", () -> FeedHooks.install(param.classLoader));
+                        if (Config.DEXKIT_ENABLED) {
+                            // FeedHooks must not race DexKit initialization. Install feed hooks
+                            // from the completion callback; all unrelated hooks can start now.
+                            startDexKit((Context) hook.args[0], () ->
+                                    step("feed", () -> FeedHooks.install(param.classLoader)));
+                        } else {
+                            ok &= step("feed", () -> FeedHooks.install(param.classLoader));
+                        }
                         if (Config.CLEAN_SHARE_LINKS) ok &= step("clean-links", CleanLinkHooks::install);
                         if (Config.SPOOF_REGION) ok &= step("region", RegionHooks::install);
                         if (Config.ALLOW_SCREENSHOTS) ok &= step("screenshots", ScreenCaptureHooks::install);
@@ -79,16 +85,37 @@ public final class Entry implements IXposedHookLoadPackage {
     }
 
     /** DexKit phân tích cả APK TikTok (rất nặng) nên chạy ở luồng nền, ưu tiên thấp, không chặn lúc mở app. */
-    private static void startDexKit(Context context) {
+    private static volatile boolean dexKitStarted;
+
+    private static void startDexKit(Context context, Runnable onComplete) {
         final String apkPath = context.getApplicationInfo().sourceDir;
+        synchronized (Entry.class) {
+            if (dexKitRuntime != null) {
+                onComplete.run();
+                return;
+            }
+            if (dexKitStarted) {
+                // The target process normally reaches Application.attach once. If attach is
+                // repeated, avoid launching another expensive DexKit scan; retain safe fallback.
+                HookLog.log("TikGoon: DexKit initialization already started; installing feed hooks with current runtime state");
+                onComplete.run();
+                return;
+            }
+            dexKitStarted = true;
+        }
         Thread thread = new Thread(() -> {
-            synchronized (Entry.class) {
-                if (dexKitRuntime != null) return;
+            try {
+                DexKitRuntime opened = DexKitRuntime.open(apkPath);
+                dexKitRuntime = opened;
+                HookLog.log("TikGoon: DexKit ready; dex count=" + opened.getDexCount());
+            } catch (Throwable error) {
+                HookLog.log("TikGoon: DexKit initialization failed; continuing with legacy feed lookup");
+                HookLog.log(error);
+            } finally {
                 try {
-                    dexKitRuntime = DexKitRuntime.open(apkPath);
-                    HookLog.log("TikGoon: DexKit ready; dex count=" + dexKitRuntime.getDexCount());
+                    onComplete.run();
                 } catch (Throwable error) {
-                    HookLog.log("TikGoon: DexKit initialization failed; continuing with existing hooks");
+                    HookLog.log("TikGoon: deferred feed hook installation failed");
                     HookLog.log(error);
                 }
             }

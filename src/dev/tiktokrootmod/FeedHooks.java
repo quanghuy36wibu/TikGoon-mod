@@ -178,6 +178,8 @@ final class FeedHooks {
         }
 
         try {
+            HookLog.log("TikGoon: STRUCTURAL SEARCH STARTED for optional feed "
+                    + className + " getter=" + getterName);
             ClassMatcher structure = new ClassMatcher().addMethod(
                     new MethodMatcher()
                             .name(getterName, StringMatchType.Equals, false)
@@ -191,6 +193,8 @@ final class FeedHooks {
                 return null;
             }
 
+            HookLog.log("TikGoon: STRUCTURAL CANDIDATES for optional feed "
+                    + className + " count=" + matches.size());
             Class<?> best = null;
             int bestScore = 0;
             boolean tied = false;
