@@ -5,16 +5,13 @@ import android.view.View;
 import android.widget.TextView;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.WeakHashMap;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 
-/**
- * Ẩn các nút trong feed theo mô tả (contentDescription) và vị trí trên màn hình, không phụ thuộc tên lớp
- * bị làm rối của TikTok: nút LIVE (trên trái), tìm kiếm (trên phải), dấu + follow và nút lưu (cột phải).
- * Ý tưởng lấy từ danh sách bản vá Morphe/Metra; mã được viết lại độc lập.
- */
+/** Feed-button visibility and long-press guards. */
 final class FeedButtonHooks {
     private static final int LIVE = 1;
     private static final int SEARCH = 2;
@@ -23,6 +20,7 @@ final class FeedButtonHooks {
     private static final int TAKO = 5;
 
     private static final WeakHashMap<View, Boolean> HANDLED = new WeakHashMap<>();
+    private static final Map<View, Integer> HIDDEN = new WeakHashMap<>();
     private static int hits;
     private static int dumps;
     private static int blocked;
@@ -30,66 +28,88 @@ final class FeedButtonHooks {
     private FeedButtonHooks() {}
 
     static void install() {
-        if (Config.HIDE_FEED_LIVE || Config.HIDE_FEED_SEARCH || Config.HIDE_FEED_FOLLOW || Config.HIDE_FEED_SAVE
-                || Config.HIDE_TAKO) {
-            XC_MethodHook hook = new XC_MethodHook() {
+        if (Config.HIDE_FEED_LIVE || Config.HIDE_FEED_SEARCH || Config.HIDE_FEED_FOLLOW
+                || Config.HIDE_FEED_SAVE || Config.HIDE_TAKO) {
+            XC_MethodHook inspectHook = new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     if (!(param.thisObject instanceof View)) return;
                     final View view = (View) param.thisObject;
-                    CharSequence description = view.getContentDescription();
-                    if ((description == null || description.length() == 0) && Config.HIDE_TAKO && view instanceof TextView)
-                        description = ((TextView) view).getText();           // bong bóng Tako thường là chữ
-                    if (description == null || description.length() == 0 || description.length() > 40) return;
-                    if (HANDLED.containsKey(view)) return;
-                    final String value = description.toString().toLowerCase(Locale.ROOT);
+                    String description = ownDescription(view);
+                    if (description.isEmpty() && Config.HIDE_TAKO && view instanceof TextView)
+                        description = ((TextView) view).getText() == null ? "" : ((TextView) view).getText().toString();
+                    // Inspect even unlabeled views: a useful accessibility label may be on a parent.
+                    if (description.length() > 80) return;
+                    final String value = description.toLowerCase(Locale.ROOT);
                     view.post(() -> inspect(view, value, true));
                 }
             };
-            XposedBridge.hookAllMethods(View.class, "onAttachedToWindow", hook);
-            XposedBridge.hookAllMethods(View.class, "setContentDescription", hook);
-            if (Config.HIDE_TAKO) XposedBridge.hookAllMethods(TextView.class, "setText", hook);
+            XposedBridge.hookAllMethods(View.class, "onAttachedToWindow", inspectHook);
+            XposedBridge.hookAllMethods(View.class, "setContentDescription", inspectHook);
+            if (Config.HIDE_TAKO) XposedBridge.hookAllMethods(TextView.class, "setText", inspectHook);
+
+            // TikTok may reset visibility during a rebind/re-layout. Keep explicitly hidden views hidden.
+            XposedBridge.hookAllMethods(View.class, "setVisibility", new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    if (!(param.thisObject instanceof View) || param.args == null || param.args.length == 0) return;
+                    Integer required = HIDDEN.get((View) param.thisObject);
+                    if (required != null && ((Integer) param.args[0]).intValue() != required.intValue()) param.args[0] = required;
+                }
+            });
         }
+
         if (Config.NO_LONG_LIKE || Config.NO_LONG_SHARE) {
             XposedBridge.hookAllMethods(View.class, "performLongClick", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam param) {
                     if (param.thisObject instanceof View && blockLongPress((View) param.thisObject))
-                        param.setResult(Boolean.TRUE);                         // coi như đã xử lý, TikTok không nhận
+                        param.setResult(Boolean.TRUE);
                 }
             });
         }
         HookLog.log("TikTokRootMod: feed button hooks enabled");
     }
 
-    /** Giữ lâu nút tim (repost) hoặc nút chia sẻ (chia sẻ nhanh) trong cột phải thì bỏ qua. */
+    private static String ownDescription(View view) {
+        CharSequence description = view.getContentDescription();
+        return description == null ? "" : description.toString();
+    }
+
+    /** Walk through child and parent labels; don't stop at an unrelated child label. */
     private static boolean blockLongPress(View view) {
         DisplayMetrics metrics = view.getResources().getDisplayMetrics();
         int[] position = new int[2];
         view.getLocationOnScreen(position);
         float x = position[0] + view.getWidth() / 2f;
         float y = position[1] + view.getHeight() / 2f;
-        if (x < metrics.widthPixels * 0.75f || y < metrics.heightPixels * 0.2f || y > metrics.heightPixels * 0.9f)
+        if (x < metrics.widthPixels * 0.68f || y < metrics.heightPixels * 0.18f || y > metrics.heightPixels * 0.92f)
             return false;
+
         View current = view;
-        for (int depth = 0; depth < 3 && current != null; depth++) {      // mô tả có thể nằm ở khối cha
-            CharSequence description = current.getContentDescription();
-            if (description != null && description.length() > 0) {
-                String value = description.toString().toLowerCase(Locale.ROOT);
-                boolean like = Config.NO_LONG_LIKE && (value.contains("like") || value.contains("thích"));
-                boolean share = Config.NO_LONG_SHARE && (value.contains("share") || value.contains("chia sẻ"));
-                if (like || share) {
-                    if (blocked++ < 5)
-                        HookLog.log("TikTokRootMod: blocked long press on '" + value + "'");
-                    return true;
-                }
-                return false;
+        for (int depth = 0; depth < 6 && current != null; depth++) {
+            String value = ownDescription(current).toLowerCase(Locale.ROOT);
+            if (current instanceof TextView) {
+                CharSequence text = ((TextView) current).getText();
+                if (text != null) value += " " + text.toString().toLowerCase(Locale.ROOT);
+            }
+            boolean like = Config.NO_LONG_LIKE && containsAny(value,
+                    "like", "thích", "repost", "đăng lại", "heart", "tim", "thả tim");
+            boolean share = Config.NO_LONG_SHARE && containsAny(value,
+                    "share", "chia sẻ", "gửi", "send");
+            if (like || share) {
+                if (blocked++ < 20) HookLog.log("TikTokRootMod: blocked long press on '" + value.trim() + "'");
+                return true;
             }
             current = current.getParent() instanceof View ? (View) current.getParent() : null;
         }
         return false;
     }
 
+    private static boolean containsAny(String text, String... tokens) {
+        for (String token : tokens) if (text.contains(token)) return true;
+        return false;
+    }
+
     private static void inspect(View view, String description, boolean retry) {
-        if (HANDLED.containsKey(view) || !view.isAttachedToWindow()) return;
+        if (!view.isAttachedToWindow()) return;
         if (view.getWidth() == 0 && retry) {
             view.postDelayed(() -> inspect(view, description, false), 400);
             return;
@@ -101,52 +121,59 @@ final class FeedButtonHooks {
         float y = position[1] + view.getHeight() / 2f;
         float width = metrics.widthPixels;
         float height = metrics.heightPixels;
-        boolean topBar = y < height * 0.14f;
-        boolean rightColumn = x > width * 0.8f && y > height * 0.2f && y < height * 0.9f;
+        boolean topBar = y < height * 0.16f;
+        boolean rightColumn = x > width * 0.76f && y > height * 0.18f && y < height * 0.93f;
 
-        if (Config.LOG_ENABLED && dumps < 40 && (topBar || rightColumn)) {
+        String label = description == null ? "" : description;
+        // The app frequently puts accessibility text on a parent rather than the icon view.
+        View parent = view.getParent() instanceof View ? (View) view.getParent() : null;
+        for (int depth = 0; depth < 4 && parent != null; depth++) {
+            String parentLabel = ownDescription(parent).toLowerCase(Locale.ROOT);
+            if (!parentLabel.isEmpty() && parentLabel.length() <= 80) label += " " + parentLabel;
+            if (parent instanceof TextView) {
+                CharSequence text = ((TextView) parent).getText();
+                if (text != null && text.length() <= 80) label += " " + text.toString().toLowerCase(Locale.ROOT);
+            }
+            parent = parent.getParent() instanceof View ? (View) parent.getParent() : null;
+        }
+        label = label.toLowerCase(Locale.ROOT).trim();
+        if (label.isEmpty()) return;
+
+        if (Config.LOG_ENABLED && dumps < 80 && (topBar || rightColumn)) {
             dumps++;
-            HookLog.log("TikTokRootMod: button '" + description + "' " + view.getClass().getSimpleName()
+            HookLog.log("TikTokRootMod: button candidate '" + label + "' " + view.getClass().getSimpleName()
                     + " at " + (int) x + "," + (int) y + " size " + view.getWidth() + "x" + view.getHeight());
         }
 
         int kind = 0;
-        if (Config.HIDE_TAKO && description.contains("tako")) kind = TAKO;
-        else if (Config.HIDE_FEED_LIVE && topBar && x < width * 0.3f
-                && (description.equals("live") || description.startsWith("live ") || description.contains("trực tiếp")))
-            kind = LIVE;
-        else if (Config.HIDE_FEED_SEARCH && topBar && x > width * 0.7f
-                && (description.contains("search") || description.contains("tìm kiếm")))
-            kind = SEARCH;
-        else if (Config.HIDE_FEED_FOLLOW && rightColumn && view.getWidth() <= width * 0.12f
-                && (description.contains("follow") || description.contains("theo dõi")))
-            kind = FOLLOW;
+        if (Config.HIDE_TAKO && label.contains("tako")) kind = TAKO;
+        else if (Config.HIDE_FEED_LIVE && topBar && x < width * 0.34f
+                && containsAny(label, "live", "trực tiếp")) kind = LIVE;
+        else if (Config.HIDE_FEED_SEARCH && topBar && x > width * 0.66f
+                && containsAny(label, "search", "tìm kiếm", "tìm kiếm video")) kind = SEARCH;
+        else if (Config.HIDE_FEED_FOLLOW && rightColumn && view.getWidth() <= width * 0.18f
+                && containsAny(label, "follow", "theo dõi", "follow user", "thêm bạn")) kind = FOLLOW;
         else if (Config.HIDE_FEED_SAVE && rightColumn
-                && (description.contains("favorite") || description.contains("yêu thích")
-                || description.contains("bookmark") || description.contains("save") || description.contains("lưu")))
-            kind = SAVE;
-        if (kind == 0) return;
+                && containsAny(label, "favorite", "yêu thích", "bookmark", "save", "lưu", "đã lưu", "saved", "collect", "收藏")) kind = SAVE;
+        if (kind == 0 || HANDLED.containsKey(view)) return;
 
         View target = view;
-        if (kind == SAVE) {                                   // gồm cả biểu tượng lẫn số đếm bên dưới
+        if (kind == SAVE || kind == FOLLOW) {
             View current = view;
-            for (int depth = 0; depth < 3; depth++) {
+            for (int depth = 0; depth < 4; depth++) {
                 if (!(current.getParent() instanceof View)) break;
-                View parent = (View) current.getParent();
-                if (parent.getWidth() > width * 0.2f || parent.getHeight() > height * 0.14f) break;
-                current = parent;
+                View p = (View) current.getParent();
+                if (p.getWidth() > width * 0.22f || p.getHeight() > height * 0.16f) break;
+                current = p;
             }
             target = current;
         }
         HANDLED.put(view, true);
         HANDLED.put(target, true);
-        final int mode = (kind == LIVE || kind == SEARCH) ? View.INVISIBLE : View.GONE;   // thanh trên giữ nguyên bố cục
-        if (hits++ < 8)
-            HookLog.log("TikTokRootMod: hid feed button kind=" + kind + " '" + description + "' "
-                    + target.getClass().getSimpleName() + " " + target.getWidth() + "x" + target.getHeight());
-        target.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-            if (v.getVisibility() != mode) v.post(() -> v.setVisibility(mode));
-        });
+        final int mode = (kind == LIVE || kind == SEARCH) ? View.INVISIBLE : View.GONE;
+        HIDDEN.put(target, mode);
+        if (hits++ < 30) HookLog.log("TikTokRootMod: hid feed button kind=" + kind + " '" + label + "' "
+                + target.getClass().getSimpleName() + " " + target.getWidth() + "x" + target.getHeight());
         target.setVisibility(mode);
     }
 }
