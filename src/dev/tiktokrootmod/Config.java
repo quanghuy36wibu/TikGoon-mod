@@ -14,17 +14,6 @@ public final class Config {
     private Config() {}
 
     public static boolean HIDE_ADS = true;
-    public static boolean HIDE_PROMO = true;
-    public static boolean HIDE_FEED_LIVE = false;
-    public static boolean HIDE_FEED_SEARCH = false;
-    public static boolean HIDE_FEED_FOLLOW = false;
-    public static boolean HIDE_FEED_SAVE = false;
-    public static boolean STOP_LOOP = false;
-    public static boolean HIDE_TAKO = false;
-    public static boolean DEXKIT_ENABLED = false;
-    public static boolean NO_LONG_LIKE = false;
-    public static boolean NO_LONG_SHARE = false;
-    public static int DEFAULT_SPEED = 0;   // 0 = tắt; 125, 150, 200 = phần trăm
     public static boolean HIDE_LIVES = false;
     public static boolean HIDE_PHOTOS = false;
     public static boolean HIDE_STORIES = false;
@@ -42,16 +31,12 @@ public final class Config {
     public static boolean UNLIMITED_PINNED_CHATS = false;
     public static boolean DISABLE_LIVE_AUTO_TRANSLATE = true;
     public static boolean THEME_RAINBOW = false;
-    public static boolean THEME_LIGHT = false;
-    public static boolean COMMENT_SCRIM = false;
-    public static boolean DISABLE_DOUBLE_TAP_LIKE = false;
-    public static boolean LOG_ENABLED = false;
-    public static int COMMENT_SCRIM_OPACITY = 35;
     public static String THEME_COLOR = "#FF2D55";
     public static int THEME_COLOR_OPACITY = 0;
     public static int THEME_IMAGE_OPACITY = 0;
     public static int THEME_VIDEO_OPACITY = 0;
     public static String FONT_FAMILY = "default";
+    public static String FONT_FILE = ""; // đường dẫn file .ttf/.otf trong TikTok data
     public static String REGION_ISO = "kz";
     public static String REGION_OPERATOR = "40101";
     public static String REGION_OPERATOR_NAME = "Beeline";
@@ -69,17 +54,6 @@ public final class Config {
             }
             JSONObject values = new JSONObject(new String(Base64.decode(encoded, Base64.DEFAULT), "UTF-8"));
             HIDE_ADS = values.optBoolean("hide_ads", HIDE_ADS);
-            HIDE_PROMO = values.optBoolean("hide_promo", HIDE_PROMO);
-            HIDE_FEED_LIVE = values.optBoolean("hide_feed_live", HIDE_FEED_LIVE);
-            HIDE_FEED_SEARCH = values.optBoolean("hide_feed_search", HIDE_FEED_SEARCH);
-            HIDE_FEED_FOLLOW = values.optBoolean("hide_feed_follow", HIDE_FEED_FOLLOW);
-            HIDE_FEED_SAVE = values.optBoolean("hide_feed_save", HIDE_FEED_SAVE);
-            STOP_LOOP = values.optBoolean("stop_loop", STOP_LOOP);
-            HIDE_TAKO = values.optBoolean("hide_tako", HIDE_TAKO);
-            DEXKIT_ENABLED = values.optBoolean("dexkit_enabled", DEXKIT_ENABLED);
-            NO_LONG_LIKE = values.optBoolean("no_long_like", NO_LONG_LIKE);
-            NO_LONG_SHARE = values.optBoolean("no_long_share", NO_LONG_SHARE);
-            DEFAULT_SPEED = Math.max(0, Math.min(300, values.optInt("default_speed", DEFAULT_SPEED)));
             HIDE_LIVES = values.optBoolean("hide_lives", HIDE_LIVES);
             HIDE_PHOTOS = values.optBoolean("hide_photos", HIDE_PHOTOS);
             HIDE_STORIES = values.optBoolean("hide_stories", HIDE_STORIES);
@@ -97,16 +71,12 @@ public final class Config {
             UNLIMITED_PINNED_CHATS = values.optBoolean("unlimited_pinned_chats", UNLIMITED_PINNED_CHATS);
             DISABLE_LIVE_AUTO_TRANSLATE = values.optBoolean("disable_live_auto_translate", DISABLE_LIVE_AUTO_TRANSLATE);
             THEME_RAINBOW = values.optBoolean("theme_rainbow", THEME_RAINBOW);
-            THEME_LIGHT = values.optBoolean("theme_light", THEME_LIGHT);
-            COMMENT_SCRIM = values.optBoolean("comment_scrim", COMMENT_SCRIM);
-            DISABLE_DOUBLE_TAP_LIKE = values.optBoolean("disable_double_tap_like", DISABLE_DOUBLE_TAP_LIKE);
-            LOG_ENABLED = values.optBoolean("hook_log", LOG_ENABLED);
-            COMMENT_SCRIM_OPACITY = Math.max(0, Math.min(80, values.optInt("comment_scrim_opacity", COMMENT_SCRIM_OPACITY)));
             THEME_COLOR = values.optString("theme_color", THEME_COLOR);
             THEME_COLOR_OPACITY = Math.max(0, Math.min(80, values.optInt("theme_color_opacity", THEME_COLOR_OPACITY)));
             THEME_IMAGE_OPACITY = Math.max(0, Math.min(80, values.optInt("theme_image_opacity", THEME_IMAGE_OPACITY)));
             THEME_VIDEO_OPACITY = Math.max(0, Math.min(80, values.optInt("theme_video_opacity", THEME_VIDEO_OPACITY)));
             FONT_FAMILY = values.optString("font_family", FONT_FAMILY);
+            FONT_FILE = values.optString("font_file", FONT_FILE);
             REGION_ISO = values.optString("region_iso", REGION_ISO);
             REGION_OPERATOR = values.optString("region_operator", REGION_OPERATOR);
             REGION_OPERATOR_NAME = values.optString("region_operator_name", REGION_OPERATOR_NAME);

@@ -26,7 +26,7 @@ final class AppearanceHooks {
     private AppearanceHooks() {}
 
     static void install() {
-        if (!Config.MINIMAL_UI && !Config.ANTI_BURNOUT && "default".equals(Config.FONT_FAMILY)) return;
+        if (!Config.MINIMAL_UI && !Config.ANTI_BURNOUT && "default".equals(Config.FONT_FAMILY) && Config.FONT_FILE.isEmpty()) return;
         if (Config.MINIMAL_UI || Config.ANTI_BURNOUT) {
             XposedBridge.hookAllMethods(View.class, "onAttachedToWindow", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
@@ -67,8 +67,26 @@ final class AppearanceHooks {
             });
         }
         if (!"default".equals(Config.FONT_FAMILY)) {
-            final Typeface face = "serif".equals(Config.FONT_FAMILY) ? Typeface.SERIF :
-                    "monospace".equals(Config.FONT_FAMILY) ? Typeface.MONOSPACE : Typeface.DEFAULT;
+            final Typeface face;
+            if ("custom".equals(Config.FONT_FAMILY) && !Config.FONT_FILE.isEmpty()) {
+                // Tải font từ file người dùng chọn
+                java.io.File fontFile = new java.io.File(Config.FONT_FILE);
+                Typeface loaded = null;
+                if (fontFile.exists() && fontFile.isFile()) {
+                    try {
+                        loaded = Typeface.createFromFile(fontFile);
+                        XposedBridge.log("TikTokRootMod: custom font loaded: " + Config.FONT_FILE);
+                    } catch (Exception e) {
+                        XposedBridge.log("TikTokRootMod: failed to load font: " + e.getMessage());
+                    }
+                } else {
+                    XposedBridge.log("TikTokRootMod: font file not found: " + Config.FONT_FILE);
+                }
+                face = loaded != null ? loaded : Typeface.DEFAULT;
+            } else {
+                face = "serif".equals(Config.FONT_FAMILY) ? Typeface.SERIF :
+                        "monospace".equals(Config.FONT_FAMILY) ? Typeface.MONOSPACE : Typeface.DEFAULT;
+            }
             XposedBridge.hookAllMethods(TextView.class, "setTypeface", new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam param) {
                     if (param.args.length > 0 && param.args[0] instanceof Typeface) param.args[0] = face;

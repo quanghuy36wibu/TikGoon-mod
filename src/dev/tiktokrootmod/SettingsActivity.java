@@ -3,8 +3,6 @@ package dev.tiktokrootmod;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
@@ -31,8 +29,6 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.view.animation.AccelerateInterpolator;
-import android.view.animation.DecelerateInterpolator;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -77,11 +73,12 @@ public final class SettingsActivity extends Activity {
     private static final ExecutorService SAVES = Executors.newSingleThreadExecutor();
     private static final ExecutorService ROOT = Executors.newSingleThreadExecutor();
     private static final String TIKTOK = "com.ss.android.ugc.trill";
-    private static final String LOG_FILE = "/data/user/0/" + TIKTOK + "/files/tiktokrootmod_log";
     private static final String STATUS_FILE = "/data/user/0/" + TIKTOK + "/files/tiktokrootmod_status";
     private static final int PICK_THEME_IMAGE = 701;
     private static final int PICK_LAUNCHER_ICON = 702;
     private static final int PICK_THEME_VIDEO = 703;
+    private static final int PICK_FONT_FILE = 704;
+    static final String FONT_PATH = "/data/user/0/com.ss.android.ugc.trill/files/tiktokrootmod_font.ttf";
     private SharedPreferences prefs;
     private EditText likes;
     private EditText views;
@@ -101,9 +98,6 @@ public final class SettingsActivity extends Activity {
     // Trạng thái trực tiếp
     private final Handler handler = new Handler(Looper.getMainLooper());
     private int tick;
-    private int currentTab = -1;
-    private int transitionId;
-    private final java.util.HashMap<String, SeekBar> opacityBars = new java.util.HashMap<>();
     private final Runnable restartTask = this::restartTikTok;
     private volatile boolean rootChecking;
     private StatusRow stModule, stRoot, stTikTok, stHook, stConfig;
@@ -121,7 +115,7 @@ public final class SettingsActivity extends Activity {
         @Override public void run() {
             renderAll();
             tick++;
-            if (tick % 5 == 0 && prefs.getBoolean("live_monitor", false)) refreshRoot();
+            if (tick % 5 == 0 && prefs.getBoolean("live_monitor", true)) refreshRoot();
             handler.postDelayed(this, 2000);
         }
     };
@@ -137,10 +131,6 @@ public final class SettingsActivity extends Activity {
     @Override protected void onPause() {
         super.onPause();
         handler.removeCallbacks(ticker);
-        if (currentTab >= 0) {          // dừng animation đang dở, chỉ giữ lại đúng trang hiện tại
-            transitionId++;
-            showOnly(currentTab);
-        }
     }
 
     @Override protected void onCreate(Bundle state) {
@@ -186,9 +176,12 @@ public final class SettingsActivity extends Activity {
         stTikTok = statusRow(live, "TikTok", null);
         stHook = statusRow(live, "Hook trong TikTok", null);
         stConfig = statusRow(live, "Cấu hình đồng bộ", null);
-        liveUpdated = note(live, "Đang kiểm tra…");
+        LinearLayout monitor = toggle(live, "Theo dõi trực tiếp", "Quét root mỗi 10 giây", "live_monitor", true, false);
+        liveUpdated = (TextView) monitor.getTag();
+        toggle(live, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
+                "auto_restart", false, false);
         action(live, "Khởi động lại TikTok ngay", "Buộc dừng rồi mở lại bằng root", this::confirmRestart);
-        note(live, "Sau khi đổi cài đặt, buộc dừng và mở lại TikTok. Chạm vào dòng Quyền root để quét lại ngay. Theo dõi trực tiếp và Tự khởi động lại nằm trong tab Nâng cao.");
+        note(live, "Sau khi đổi cài đặt, buộc dừng và mở lại TikTok. Chạm vào dòng Quyền root để kiểm tra lại ngay. KernelSU có thể hiện thông báo mỗi lần quét.");
 
         section(p, "Lọc feed");
         LinearLayout feed = card(p);
@@ -198,7 +191,6 @@ public final class SettingsActivity extends Activity {
         toggle(feed, "Ẩn story", null, "hide_stories", false);
         toggle(feed, "Ẩn mini-series", null, "hide_series", false);
         toggle(feed, "Ẩn nội dung trả phí", null, "hide_paid", false);
-        toggle(feed, "Ẩn nút quà, thưởng nổi", "Ẩn biểu tượng \"Nhấp ngay có thưởng\" ở góc trái trên", "hide_promo", true);
 
         section(p, "Chung");
         LinearLayout general = card(p);
@@ -214,48 +206,30 @@ public final class SettingsActivity extends Activity {
         toggle(video, "Luôn hiện thanh tua video", null, "always_show_seekbar", false);
         toggle(video, "Giao diện tối giản", "Ẩn một số lớp phủ video", "minimal_ui", false);
         toggle(video, "Giảm lưu ảnh OLED", "Làm mờ, dịch chuyển lớp phủ", "anti_burnout", false);
-        toggle(video, "Tắt chạm 2 lần để thả tim", "Chạm đúp không còn thả tim, vẫn dùng được nút tim",
-                "disable_double_tap_like", false);
-        toggle(video, "Dừng lặp video", "Xem xong thì dừng, không tự phát lại", "stop_loop", false);
-        LinearLayout speedRow = action(video, "Tốc độ phát mặc định", speedLabel(prefs.getInt("default_speed", 0)), null);
-        TextView speedSub = (TextView) speedRow.getTag();
-        speedRow.setOnClickListener(v -> dialog().setTitle("Tốc độ phát mặc định")
-                .setItems(new String[]{"Tắt (mặc định TikTok)", "1,25x", "1,5x", "2x"}, (d, which) -> {
-                    int value = new int[]{0, 125, 150, 200}[which];
-                    prefs.edit().putInt("default_speed", value).apply();
-                    speedSub.setText(speedLabel(value));
-                    syncSettings();
-                }).show());
         note(video, "Khi bật cả hai, Tối giản ẩn lớp phủ nên hiệu ứng làm mờ chỉ thấy rõ khi tắt Tối giản.");
         LinearLayout fontRow = action(video, "Font TikTok", prefs.getString("font_family", "default"), null);
         TextView fontSub = (TextView) fontRow.getTag();
+        // Sub-row: chọn file font tùy chỉnh (chỉ hiện khi chọn "custom")
+        String savedFontFile = prefs.getString("font_file", "");
+        String fontFileName = savedFontFile.isEmpty() ? "Chưa chọn file" :
+                savedFontFile.substring(savedFontFile.lastIndexOf('/') + 1);
+        LinearLayout fontFileRow = action(video, "File font tùy chỉnh", fontFileName, null);
+        TextView fontFileSub = (TextView) fontFileRow.getTag();
+        fontFileRow.setVisibility("custom".equals(prefs.getString("font_family", "default"))
+                ? android.view.View.VISIBLE : android.view.View.GONE);
+        fontFileRow.setOnClickListener(v -> dialog().setTitle("File font tùy chỉnh")
+                .setItems(new String[]{"Chọn file .ttf / .otf", "Xóa font tùy chỉnh"}, (d, which) -> {
+                    if (which == 0) pickFontFile();
+                    else clearFontFile(fontFileSub);
+                }).show());
         fontRow.setOnClickListener(v -> dialog().setTitle("Font TikTok")
-                .setItems(new String[]{"Mặc định", "Serif", "Monospace"}, (d, which) -> {
-                    String family = new String[]{"default", "serif", "monospace"}[which];
+                .setItems(new String[]{"Mặc định", "Serif", "Monospace", "Tùy chỉnh (file)"}, (d, which) -> {
+                    String family = new String[]{"default", "serif", "monospace", "custom"}[which];
                     prefs.edit().putString("font_family", family).apply();
-                    fontSub.setText(family);
+                    fontSub.setText(which == 3 ? "custom" : family);
+                    fontFileRow.setVisibility(which == 3 ? android.view.View.VISIBLE : android.view.View.GONE);
                     syncSettings();
                 }).show());
-
-        section(p, "Nút trên feed");
-        LinearLayout buttons = card(p);
-        toggle(buttons, "Ẩn nút LIVE", "Góc trên bên trái", "hide_feed_live", false);
-        toggle(buttons, "Ẩn nút tìm kiếm", "Góc trên bên phải", "hide_feed_search", false);
-        toggle(buttons, "Ẩn dấu + follow", "Dưới ảnh đại diện người đăng", "hide_feed_follow", false);
-        toggle(buttons, "Ẩn nút lưu", "Cột nút bên phải", "hide_feed_save", false);
-        toggle(buttons, "Ẩn bong bóng Tako AI", "Bong bóng hỏi đáp AI của TikTok", "hide_tako", false);
-        toggle(buttons, "Tắt giữ lâu nút tim", "Giữ nút tim không mở repost", "no_long_like", false);
-        toggle(buttons, "Tắt giữ lâu nút chia sẻ", "Giữ nút chia sẻ không mở chia sẻ nhanh", "no_long_share", false);
-        note(buttons, "Nhận diện theo mô tả và vị trí nút. Nếu nút không biến mất, bật Ghi nhật ký hook rồi gửi nhật ký cho tôi.");
-
-        section(p, "Phạm vi nền");
-        LinearLayout scope = card(p);
-        toggle(scope, "Áp dụng cả giao diện sáng", "Phủ ảnh, màu, video lên nền trắng (hồ sơ, bình luận)",
-                "theme_light", false);
-        toggle(scope, "Làm dịu ảnh trong bình luận", "Thêm lớp mờ nhẹ để chữ dễ đọc, ảnh vẫn giữ độ đậm",
-                "comment_scrim", false);
-        opacity(scope, "Độ mờ lớp làm dịu", "comment_scrim_opacity", 35);
-        note(scope, "Mặc định chỉ thay nền đen. Bật mục này nếu TikTok của bạn đang ở chế độ sáng. Khung bình luận nhận diện được cả tiếng Việt.");
 
         section(p, "Màu giao diện");
         LinearLayout color = card(p);
@@ -323,21 +297,6 @@ public final class SettingsActivity extends Activity {
     }
 
     private void buildAdvanced(LinearLayout p) {
-        section(p, "Theo dõi và khởi động lại");
-        LinearLayout system = card(p);
-        toggle(system, "Theo dõi trực tiếp", "Quét root mỗi 10 giây khi đang mở app (KernelSU có thể hiện thông báo)",
-                "live_monitor", false, false);
-        toggle(system, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
-                "auto_restart", false, false);
-        toggle(system, "Bật DexKit (thử nghiệm)", "Phân tích APK TikTok ở nền. Chưa hook nào dùng, nặng máy; chỉ bật khi cần thử",
-                "dexkit_enabled", false);
-
-        section(p, "Nhật ký");
-        LinearLayout logs = card(p);
-        toggle(logs, "Ghi nhật ký hook", "Chỉ bật khi cần gửi lỗi. Tắt để TikTok nhẹ hơn (cần mở lại TikTok)",
-                "hook_log", false);
-        action(logs, "Xem nhật ký hook", "Đọc nhật ký module ghi trong TikTok (cần root), có nút sao chép", this::showHookLog);
-
         section(p, "Tải media");
         LinearLayout media = card(p);
         toggle(media, "Bỏ watermark khi tải video", "Dùng nút tải sẵn có của TikTok", "remove_download_watermark", false);
@@ -380,70 +339,11 @@ public final class SettingsActivity extends Activity {
     private void selectTab(int selected) {
         for (int i = 0; i < pages.size(); i++) {
             boolean on = i == selected;
+            pages.get(i).setVisibility(on ? View.VISIBLE : View.GONE);
             tabPills.get(i).setBackground(on ? round(CARD_HI, 16) : null);
             tabIcons.get(i).setColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTextColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
-        }
-        int previous = currentTab;
-        if (previous == selected) return;
-        currentTab = selected;
-        final int id = ++transitionId;
-        if (previous < 0) {                       // lần đầu mở app: không cần animation
-            showOnly(selected);
-            return;
-        }
-
-        // Kiểu "fade through": trang cũ mờ dần và trượt đi trước, rồi trang mới mới hiện ra.
-        // Hai trang không bao giờ hiện cùng lúc nên chữ không bị chồng lên nhau.
-        final ScrollView outgoing = pages.get(previous);
-        final ScrollView incoming = pages.get(selected);
-        final float direction = selected > previous ? 1f : -1f;
-        final float shift = dp(24);
-
-        for (int i = 0; i < pages.size(); i++) {
-            ScrollView page = pages.get(i);
-            page.animate().cancel();              // hủy animation cũ khi bấm tab liên tục
-            if (page != outgoing) resetPage(page, View.GONE);
-        }
-
-        outgoing.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-        outgoing.animate()
-                .alpha(0f)
-                .translationX(-direction * shift)
-                .setDuration(90)
-                .setInterpolator(new AccelerateInterpolator())
-                .withEndAction(() -> {
-                    if (id != transitionId) return;
-                    resetPage(outgoing, View.GONE);
-                    incoming.setAlpha(0f);
-                    incoming.setTranslationX(direction * shift);
-                    incoming.setVisibility(View.VISIBLE);
-                    incoming.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                    incoming.animate()
-                            .alpha(1f)
-                            .translationX(0f)
-                            .setDuration(210)
-                            .setInterpolator(new DecelerateInterpolator(1.6f))
-                            .withEndAction(() -> {
-                                if (id == transitionId) resetPage(incoming, View.VISIBLE);
-                            })
-                            .start();
-                })
-                .start();
-    }
-
-    private void resetPage(ScrollView page, int visibility) {
-        page.setAlpha(1f);
-        page.setTranslationX(0f);
-        page.setLayerType(View.LAYER_TYPE_NONE, null);
-        page.setVisibility(visibility);
-    }
-
-    private void showOnly(int selected) {
-        for (int i = 0; i < pages.size(); i++) {
-            pages.get(i).animate().cancel();
-            resetPage(pages.get(i), i == selected ? View.VISIBLE : View.GONE);
         }
     }
 
@@ -611,11 +511,10 @@ public final class SettingsActivity extends Activity {
         parent.addView(view);
     }
 
-    private TextView note(LinearLayout card, String value) {
+    private void note(LinearLayout card, String value) {
         TextView view = text(value, 14, TEXT_SUB);
         view.setPadding(dp(20), dp(10), dp(20), dp(10));
         card.addView(view);
-        return view;
     }
 
     /** Một dòng tiêu đề + mô tả; TextView mô tả (nếu có) nằm trong tag của dòng. */
@@ -782,81 +681,6 @@ public final class SettingsActivity extends Activity {
         });
     }
 
-    /** Đặt độ mờ trong cài đặt và cập nhật luôn thanh trượt trên màn hình. */
-    private void setOpacity(String key, int value) {
-        prefs.edit().putInt(key, value).apply();
-        SeekBar bar = opacityBars.get(key);
-        if (bar != null) bar.setProgress(value);
-    }
-
-    /** Sau khi chọn lại ảnh/video: nếu độ mờ đang 0% (do lần xóa trước) thì đặt lại 40% để nhìn thấy ngay. */
-    private boolean restoreOpacity(String key) {
-        if (prefs.getInt(key, 0) > 0) return false;
-        setOpacity(key, 40);
-        syncSettings();
-        return true;
-    }
-
-    private boolean scheduleAutoRestart() {
-        if (!prefs.getBoolean("auto_restart", false)) return false;
-        handler.removeCallbacks(restartTask);
-        handler.postDelayed(restartTask, 3000);
-        return true;
-    }
-
-    private String speedLabel(int value) {
-        return value <= 0 ? "Tắt (mặc định TikTok)" : (value == 125 ? "1,25x" : value == 150 ? "1,5x" : value / 100 + "x");
-    }
-
-    private void showHookLog() {
-        Toast.makeText(this, "Đang đọc nhật ký…", Toast.LENGTH_SHORT).show();
-        ROOT.execute(() -> {
-            String content;
-            try {
-                Process process = new ProcessBuilder("su", "-c", "tail -n 200 " + LOG_FILE + " 2>/dev/null")
-                        .redirectErrorStream(true).start();
-                if (!process.waitFor(15, TimeUnit.SECONDS)) {
-                    process.destroy();
-                    content = "su không phản hồi.";
-                } else {
-                    StringBuilder builder = new StringBuilder();
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) builder.append(line).append('\n');
-                    }
-                    content = builder.toString().trim();
-                    if (content.isEmpty())
-                        content = "Chưa có nhật ký. Bật module trong LSPosed, mở TikTok, thử chạm đúp vài lần rồi xem lại.";
-                }
-            } catch (Exception error) {
-                content = "Không đọc được nhật ký: " + error;
-            }
-            final String shown = content;
-            runOnUiThread(() -> showLogDialog(shown));
-        });
-    }
-
-    private void showLogDialog(String shown) {
-        ScrollView scroll = new ScrollView(this);
-        TextView view = text(shown, 11, TEXT);
-        view.setTypeface(Typeface.MONOSPACE);
-        view.setTextIsSelectable(true);
-        view.setPadding(dp(20), dp(12), dp(20), dp(12));
-        scroll.addView(view);
-        dialog().setTitle("Nhật ký hook").setView(scroll)
-                .setPositiveButton("Sao chép", (d, w) -> {
-                    ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    clipboard.setPrimaryClip(ClipData.newPlainText("TikGoon log", shown));
-                    Toast.makeText(this, "Đã sao chép nhật ký.", Toast.LENGTH_SHORT).show();
-                })
-                .setNeutralButton("Xóa", (d, w) -> ROOT.execute(() -> {
-                    try {
-                        new ProcessBuilder("su", "-c", "rm -f " + LOG_FILE).start().waitFor(10, TimeUnit.SECONDS);
-                    } catch (Exception ignored) { }
-                }))
-                .setNegativeButton("Đóng", null).show();
-    }
-
     private void confirmRestart() {
         dialog().setTitle("Khởi động lại TikTok?")
                 .setMessage("TikTok sẽ bị buộc dừng rồi mở lại. Video đang tải lên hoặc đang soạn có thể bị mất.")
@@ -997,8 +821,7 @@ public final class SettingsActivity extends Activity {
         }
         if (liveUpdated != null)
             liveUpdated.setText("Cập nhật lúc " + new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date())
-                    + (prefs.getBoolean("live_monitor", false) ? " · quét root mỗi 10 giây"
-                    : " · theo dõi trực tiếp đang tắt"));
+                    + " · quét root mỗi 10 giây");
     }
 
     private void opacity(LinearLayout card, String label, String key, int fallback) {
@@ -1007,7 +830,6 @@ public final class SettingsActivity extends Activity {
         card.addView(value);
         SeekBar seek = new SeekBar(this);
         seek.setMax(80);
-        opacityBars.put(key, seek);
         seek.setProgress(prefs.getInt(key, fallback));
         seek.setProgressTintList(ColorStateList.valueOf(PRIMARY));
         seek.setThumbTintList(ColorStateList.valueOf(PRIMARY));
@@ -1092,6 +914,70 @@ public final class SettingsActivity extends Activity {
         startActivityForResult(intent, PICK_THEME_VIDEO);
     }
 
+    private void pickFontFile() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        // Chấp nhận mọi loại file vì MIME type của font không đồng nhất trên Android
+        intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES,
+                new String[]{"font/ttf", "font/otf", "application/x-font-ttf",
+                        "application/x-font-otf", "application/octet-stream"});
+        startActivityForResult(intent, PICK_FONT_FILE);
+    }
+
+    private void saveFontFile(Uri uri) {
+        SAVES.execute(() -> {
+            boolean success = false;
+            String fileName = "font.ttf";
+            try {
+                // Đọc tên file gốc để biết extension
+                android.database.Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    int idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    if (idx >= 0) fileName = cursor.getString(idx);
+                    cursor.close();
+                }
+                // Copy vào files dir của module
+                File source = new File(getFilesDir(), "custom_font_tmp");
+                try (InputStream input = getContentResolver().openInputStream(uri);
+                     FileOutputStream output = new FileOutputStream(source)) {
+                    byte[] buffer = new byte[65536];
+                    int read;
+                    while ((read = input.read(buffer)) != -1) output.write(buffer, 0, read);
+                }
+                // Dùng root copy vào TikTok data
+                String command = "cp /data/user/0/dev.tiktokrootmod/files/custom_font_tmp "
+                        + FONT_PATH + " && chmod 644 " + FONT_PATH;
+                Process process = new ProcessBuilder("su", "-c", command).start();
+                success = process.waitFor(30, java.util.concurrent.TimeUnit.SECONDS)
+                        && process.exitValue() == 0;
+                if (success) {
+                    prefs.edit().putString("font_file", FONT_PATH)
+                            .putString("font_family", "custom").apply();
+                    syncSettings();
+                }
+            } catch (Exception ignored) { }
+            final boolean saved = success;
+            final String finalName = fileName;
+            runOnUiThread(() -> Toast.makeText(this,
+                    saved ? "Đã lưu font: " + finalName + ". Mở lại TikTok để áp dụng."
+                          : "Không lưu được font. Kiểm tra quyền root của module.",
+                    Toast.LENGTH_LONG).show());
+        });
+    }
+
+    private void clearFontFile(TextView fontFileSub) {
+        prefs.edit().putString("font_file", "").putString("font_family", "default").apply();
+        syncSettings();
+        SAVES.execute(() -> {
+            try { new ProcessBuilder("su", "-c", "rm -f " + FONT_PATH)
+                    .start().waitFor(30, java.util.concurrent.TimeUnit.SECONDS); }
+            catch (Exception ignored) { }
+        });
+        if (fontFileSub != null) fontFileSub.setText("Chưa chọn file");
+        Toast.makeText(this, "Đã xóa font tùy chỉnh. Mở lại TikTok.", Toast.LENGTH_LONG).show();
+    }
+
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
@@ -1099,6 +985,7 @@ public final class SettingsActivity extends Activity {
         if (requestCode == PICK_THEME_IMAGE) saveThemeImage(uri);
         else if (requestCode == PICK_LAUNCHER_ICON) saveLauncherIcon(uri);
         else if (requestCode == PICK_THEME_VIDEO) saveThemeVideo(uri);
+        else if (requestCode == PICK_FONT_FILE) saveFontFile(uri);
     }
 
     private Bitmap decodeImage(Uri uri, int maxSide) throws Exception {
@@ -1136,23 +1023,14 @@ public final class SettingsActivity extends Activity {
                 success = process.waitFor(30, TimeUnit.SECONDS) && process.exitValue() == 0;
             } catch (Exception ignored) { }
             final boolean saved = success;
-            runOnUiThread(() -> {
-                if (!saved) {
-                    Toast.makeText(this, "Không lưu được ảnh. Kiểm tra quyền root của module.",
-                            Toast.LENGTH_LONG).show();
-                    return;
-                }
-                boolean restored = restoreOpacity("theme_image_opacity");
-                boolean auto = restored ? prefs.getBoolean("auto_restart", false) : scheduleAutoRestart();
-                Toast.makeText(this, "Đã lưu ảnh" + (restored ? ", độ mờ đặt lại 40%" : "") +
-                        (auto ? ". TikTok sẽ tự khởi động lại." : ". Mở lại TikTok để áp dụng."),
-                        Toast.LENGTH_LONG).show();
-            });
+            runOnUiThread(() -> Toast.makeText(this, saved ?
+                    "Đã lưu ảnh. Chỉnh độ mờ ảnh rồi mở lại TikTok." :
+                    "Không lưu được ảnh. Kiểm tra quyền root của module.", Toast.LENGTH_LONG).show());
         });
     }
 
     private void clearThemeImage() {
-        setOpacity("theme_image_opacity", 0);
+        prefs.edit().putInt("theme_image_opacity", 0).apply();
         syncSettings();
         SAVES.execute(() -> {
             try { new ProcessBuilder("su", "-c", "rm -f " + ThemeHooks.IMAGE_PATH)
@@ -1184,23 +1062,14 @@ public final class SettingsActivity extends Activity {
                 success = process.waitFor(60, TimeUnit.SECONDS) && process.exitValue() == 0;
             } catch (Exception ignored) { }
             final boolean saved = success;
-            runOnUiThread(() -> {
-                if (!saved) {
-                    Toast.makeText(this, "Không lưu được video (giới hạn 200 MB).",
-                            Toast.LENGTH_LONG).show();
-                    return;
-                }
-                boolean restored = restoreOpacity("theme_video_opacity");
-                boolean auto = restored ? prefs.getBoolean("auto_restart", false) : scheduleAutoRestart();
-                Toast.makeText(this, "Đã lưu video" + (restored ? ", độ mờ đặt lại 40%" : "") +
-                        (auto ? ". TikTok sẽ tự khởi động lại." : ". Mở lại TikTok để áp dụng."),
-                        Toast.LENGTH_LONG).show();
-            });
+            runOnUiThread(() -> Toast.makeText(this, saved ?
+                    "Đã lưu video. Chỉnh độ mờ rồi mở lại TikTok." :
+                    "Không lưu được video (giới hạn 200 MB).", Toast.LENGTH_LONG).show());
         });
     }
 
     private void clearThemeVideo() {
-        setOpacity("theme_video_opacity", 0);
+        prefs.edit().putInt("theme_video_opacity", 0).apply();
         syncSettings();
         SAVES.execute(() -> {
             try { new ProcessBuilder("su", "-c", "rm -f " + VideoBackground.VIDEO_PATH)
@@ -1319,20 +1188,17 @@ public final class SettingsActivity extends Activity {
                 "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                "disable_live_auto_translate", "theme_rainbow", "theme_light", "comment_scrim", "disable_double_tap_like", "hook_log", "hide_promo", "hide_feed_live", "hide_feed_search",
-                "hide_feed_follow", "hide_feed_save", "stop_loop", "hide_tako", "no_long_like", "no_long_share", "dexkit_enabled"}) {
+                "disable_live_auto_translate", "theme_rainbow"}) {
             boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
                     key.equals("spoof_region") || key.equals("allow_screenshots") ||
-                    key.equals("profile_background") || key.equals("disable_live_auto_translate") ||
-                    key.equals("hide_promo");
+                    key.equals("profile_background") || key.equals("disable_live_auto_translate");
             values.put(key, prefs.getBoolean(key, fallback));
         }
         values.put("region_iso", prefs.getString("region_iso", "kz"));
         values.put("font_family", prefs.getString("font_family", "default"));
+        values.put("font_file", prefs.getString("font_file", ""));
         values.put("theme_color", prefs.getString("theme_color", "#FF2D55"));
         values.put("theme_color_opacity", prefs.getInt("theme_color_opacity", 0));
-        values.put("comment_scrim_opacity", prefs.getInt("comment_scrim_opacity", 35));
-        values.put("default_speed", prefs.getInt("default_speed", 0));
         values.put("theme_image_opacity", prefs.getInt("theme_image_opacity", 0));
         values.put("theme_video_opacity", prefs.getInt("theme_video_opacity", 0));
         values.put("region_operator", prefs.getString("region_operator", "40101"));
