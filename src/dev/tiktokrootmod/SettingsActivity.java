@@ -191,6 +191,24 @@ public final class SettingsActivity extends Activity {
         toggle(feed, "Ẩn story", null, "hide_stories", false);
         toggle(feed, "Ẩn mini-series", null, "hide_series", false);
         toggle(feed, "Ẩn nội dung trả phí", null, "hide_paid", false);
+        toggle(feed, "Ẩn banner khuyến mãi", null, "hide_promo", true);
+
+        section(p, "Nút trên feed");
+        LinearLayout buttons = card(p);
+        toggle(buttons, "Ẩn nút LIVE", null, "hide_feed_live", false);
+        toggle(buttons, "Ẩn nút tìm kiếm", null, "hide_feed_search", false);
+        toggle(buttons, "Ẩn nút theo dõi", null, "hide_feed_follow", false);
+        toggle(buttons, "Ẩn nút lưu", null, "hide_feed_save", false);
+        toggle(buttons, "Ẩn Tako", null, "hide_tako", false);
+        toggle(buttons, "Chặn nhấn giữ nút thích", null, "no_long_like", false);
+        toggle(buttons, "Chặn nhấn giữ nút chia sẻ", null, "no_long_share", false);
+        toggle(buttons, "Tắt nhấn đúp để thích", null, "disable_double_tap_like", false);
+
+        section(p, "Phát video");
+        LinearLayout playback = card(p);
+        toggle(playback, "Chặn video tự lặp lại", null, "stop_loop", false);
+        slider(playback, "Tốc độ mặc định (0 = tắt)", "default_speed", 0, 300);
+        note(playback, "100% là tốc độ bình thường. Cần khởi động lại TikTok để áp dụng.");
 
         section(p, "Chung");
         LinearLayout general = card(p);
@@ -243,6 +261,9 @@ public final class SettingsActivity extends Activity {
         action(color, "Lưu màu HEX", null, this::saveThemeColor);
         opacity(color, "Độ mờ màu", "theme_color_opacity", 0);
         toggle(color, "Dải màu rainbow trên nền đen", null, "theme_rainbow", false);
+        toggle(color, "Giao diện sáng", "Đổi nền trắng sang nền theme", "theme_light", false);
+        toggle(color, "Lớp mờ dưới chữ bình luận", "Giúp chữ dễ đọc trên ảnh nền", "comment_scrim", false);
+        opacity(color, "Độ mờ lớp bình luận", "comment_scrim_opacity", 40);
 
         section(p, "Ảnh nền");
         LinearLayout image = card(p);
@@ -309,6 +330,11 @@ public final class SettingsActivity extends Activity {
         section(p, "LIVE");
         LinearLayout live = card(p);
         toggle(live, "Tắt tự dịch bình luận LIVE", null, "disable_live_auto_translate", true);
+
+        section(p, "Nâng cao");
+        LinearLayout adv = card(p);
+        toggle(adv, "Dùng DexKit tìm hook feed", "Tắt nếu TikTok bị lỗi khi mở", "dexkit_enabled", true);
+        toggle(adv, "Ghi log debug", null, "log_enabled", false);
 
         LinearLayout foot = card(p);
         note(foot, "Chưa hỗ trợ tải ảnh/âm thanh/sticker, chọn chất lượng và tự gửi streak. Giao diện cần thử trên TikTok 47.0.3.");
@@ -825,11 +851,16 @@ public final class SettingsActivity extends Activity {
     }
 
     private void opacity(LinearLayout card, String label, String key, int fallback) {
+        slider(card, label, key, fallback, 80);
+    }
+
+    /** Thanh trượt 0..max, lưu số nguyên vào prefs; hiện giá trị kèm dấu %. */
+    private void slider(LinearLayout card, String label, String key, int fallback, int max) {
         TextView value = text(label + ": " + prefs.getInt(key, fallback) + "%", 17, TEXT);
         value.setPadding(dp(20), dp(14), dp(20), dp(4));
         card.addView(value);
         SeekBar seek = new SeekBar(this);
-        seek.setMax(80);
+        seek.setMax(max);
         seek.setProgress(prefs.getInt(key, fallback));
         seek.setProgressTintList(ColorStateList.valueOf(PRIMARY));
         seek.setThumbTintList(ColorStateList.valueOf(PRIMARY));
@@ -1188,12 +1219,18 @@ public final class SettingsActivity extends Activity {
                 "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
-                "disable_live_auto_translate", "theme_rainbow"}) {
+                "disable_live_auto_translate", "theme_rainbow",
+                "hide_promo", "hide_feed_live", "hide_feed_search", "hide_feed_follow", "hide_feed_save",
+                "hide_tako", "no_long_like", "no_long_share", "disable_double_tap_like", "stop_loop",
+                "theme_light", "comment_scrim", "dexkit_enabled", "log_enabled"}) {
             boolean fallback = key.equals("hide_ads") || key.equals("clean_links") ||
                     key.equals("spoof_region") || key.equals("allow_screenshots") ||
-                    key.equals("profile_background") || key.equals("disable_live_auto_translate");
+                    key.equals("profile_background") || key.equals("disable_live_auto_translate") ||
+                    key.equals("hide_promo") || key.equals("dexkit_enabled");
             values.put(key, prefs.getBoolean(key, fallback));
         }
+        values.put("default_speed", prefs.getInt("default_speed", 0));
+        values.put("comment_scrim_opacity", prefs.getInt("comment_scrim_opacity", 40));
         values.put("region_iso", prefs.getString("region_iso", "kz"));
         values.put("font_family", prefs.getString("font_family", "default"));
         values.put("font_file", prefs.getString("font_file", ""));
