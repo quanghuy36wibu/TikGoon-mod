@@ -45,6 +45,24 @@ public final class Config {
     public static long MIN_PUBLISH_TIME_SECONDS = 0;
     public static String FILTER_WORDS = "";
 
+    // ── Các tùy chọn bổ sung (trước đây thiếu nên build lỗi) ─────────────────
+    public static boolean LOG_ENABLED = false;
+    public static boolean DEXKIT_ENABLED = true;
+    public static boolean HIDE_PROMO = true;
+    public static boolean HIDE_TAKO = false;
+    public static boolean HIDE_FEED_LIVE = false;
+    public static boolean HIDE_FEED_SEARCH = false;
+    public static boolean HIDE_FEED_FOLLOW = false;
+    public static boolean HIDE_FEED_SAVE = false;
+    public static boolean NO_LONG_LIKE = false;
+    public static boolean NO_LONG_SHARE = false;
+    public static boolean DISABLE_DOUBLE_TAP_LIKE = false;
+    public static boolean STOP_LOOP = false;
+    public static int DEFAULT_SPEED = 0;          // % (100 = bình thường, 0 = tắt)
+    public static boolean THEME_LIGHT = false;
+    public static boolean COMMENT_SCRIM = false;
+    public static int COMMENT_SCRIM_OPACITY = 40; // 0-100
+
     static void load(Context context) {
         try {
             String encoded = Settings.Global.getString(context.getContentResolver(), SYSTEM_KEY);
@@ -84,6 +102,22 @@ public final class Config {
             MIN_VIEWS = Math.max(0, values.optLong("min_views", MIN_VIEWS));
             MIN_PUBLISH_TIME_SECONDS = Math.max(0, values.optLong("min_publish_time", MIN_PUBLISH_TIME_SECONDS));
             FILTER_WORDS = values.optString("filter_words", FILTER_WORDS);
+            LOG_ENABLED = values.optBoolean("log_enabled", LOG_ENABLED);
+            DEXKIT_ENABLED = values.optBoolean("dexkit_enabled", DEXKIT_ENABLED);
+            HIDE_PROMO = values.optBoolean("hide_promo", HIDE_PROMO);
+            HIDE_TAKO = values.optBoolean("hide_tako", HIDE_TAKO);
+            HIDE_FEED_LIVE = values.optBoolean("hide_feed_live", HIDE_FEED_LIVE);
+            HIDE_FEED_SEARCH = values.optBoolean("hide_feed_search", HIDE_FEED_SEARCH);
+            HIDE_FEED_FOLLOW = values.optBoolean("hide_feed_follow", HIDE_FEED_FOLLOW);
+            HIDE_FEED_SAVE = values.optBoolean("hide_feed_save", HIDE_FEED_SAVE);
+            NO_LONG_LIKE = values.optBoolean("no_long_like", NO_LONG_LIKE);
+            NO_LONG_SHARE = values.optBoolean("no_long_share", NO_LONG_SHARE);
+            DISABLE_DOUBLE_TAP_LIKE = values.optBoolean("disable_double_tap_like", DISABLE_DOUBLE_TAP_LIKE);
+            STOP_LOOP = values.optBoolean("stop_loop", STOP_LOOP);
+            DEFAULT_SPEED = Math.max(0, Math.min(400, values.optInt("default_speed", DEFAULT_SPEED)));
+            THEME_LIGHT = values.optBoolean("theme_light", THEME_LIGHT);
+            COMMENT_SCRIM = values.optBoolean("comment_scrim", COMMENT_SCRIM);
+            COMMENT_SCRIM_OPACITY = Math.max(0, Math.min(100, values.optInt("comment_scrim_opacity", COMMENT_SCRIM_OPACITY)));
             XposedBridge.log("TikTokRootMod: settings loaded via Android Global Settings");
         } catch (Throwable error) {
             XposedBridge.log("TikTokRootMod: settings unavailable; using defaults: " + error);
