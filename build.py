@@ -22,6 +22,12 @@ TOOLS = SDK / "build-tools/36.1.0"
 ANDROID_JAR = SDK / "platforms/android-36/android.jar"
 XPOSED_URL = "https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar"
 XPOSED_SHA256 = "f48c635f1c7469fdec0e00ad2ea0b7a6b2f5b55065784a35b7ca3a84615e8e25"
+# DexKit (libs/dexkit-classes.jar) phụ thuộc FlatBuffers; jar này không nằm trong libs/ nên tải về.
+# Nếu có sẵn libs/flatbuffers-java*.jar thì dùng luôn, khỏi tải.
+FLATBUFFERS_VERSION = "25.2.10"
+FLATBUFFERS_URL = ("https://repo1.maven.org/maven2/com/google/flatbuffers/flatbuffers-java/"
+                   f"{FLATBUFFERS_VERSION}/flatbuffers-java-{FLATBUFFERS_VERSION}.jar")
+ABIS = ("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
 
 
 # ── Cross-platform: Windows dùng .exe/.bat, Linux/Mac bỏ đuôi ────────────────
@@ -52,31 +58,56 @@ def main() -> None:
     if hashlib.sha256(api.read_bytes()).hexdigest() != XPOSED_SHA256:
         raise SystemExit("Xposed API jar checksum mismatch")
 
+    # Thư viện Java đi kèm: DexKit, Kotlin stdlib, FlatBuffers
+    libs = sorted((ROOT / "libs").glob("*.jar"))
+    if not any("flatbuffers" in j.name.lower() for j in libs):
+        fb = BUILD / f"flatbuffers-java-{FLATBUFFERS_VERSION}.jar"
+        if not fb.exists():
+            urllib.request.urlretrieve(FLATBUFFERS_URL, fb)
+        libs.append(fb)
+    for need in ("dexkit-classes.jar", "kotlin-stdlib.jar"):
+        if not (ROOT / "libs" / need).is_file():
+            raise SystemExit(f"Missing libs/{need} (kiểm tra .gitignore có đang chặn *.jar không)")
+
+    if (BUILD / "classes").exists():
+        shutil.rmtree(BUILD / "classes")  # tránh lẫn class cũ
     classes = BUILD / "classes"
     classes.mkdir(exist_ok=True)
     sources = sorted((ROOT / "src").rglob("*.java"))
     if not sources:
         raise SystemExit("No Java sources")
     run(jbin("javac.exe"), "-source", "8", "-target", "8", "-encoding", "UTF-8",
-        "-cp", os.pathsep.join((str(ANDROID_JAR), str(api))), "-d", classes, *sources)
+        "-cp", os.pathsep.join([str(ANDROID_JAR), str(api), *map(str, libs)]), "-d", classes, *sources)
     class_jar = BUILD / "classes.jar"
     run(jbin("jar.exe"), "cf", class_jar, "-C", classes, ".")
     dex_dir = BUILD / "dex"
-    dex_dir.mkdir(exist_ok=True)
+    if dex_dir.exists():
+        shutil.rmtree(dex_dir)
+    dex_dir.mkdir()
+    # d8 nhận cả module lẫn các jar thư viện -> dex hết vào APK (có thể ra nhiều classes*.dex)
     run(abt("d8.bat"), "--min-api", "23", "--lib", ANDROID_JAR, "--classpath", api,
-        "--output", dex_dir, class_jar)
+        "--output", dex_dir, class_jar, *libs)
 
     unsigned = BUILD / "unsigned.apk"
     run(abt("aapt.exe"), "package", "-f", "-M", ROOT / "AndroidManifest.xml",
         "-S", ROOT / "res",
         "-I", ANDROID_JAR, "-F", unsigned)
     with zipfile.ZipFile(unsigned, "a") as apk:
-        apk.write(dex_dir / "classes.dex", "classes.dex")
+        dex_files = sorted(dex_dir.glob("classes*.dex"))
+        if not dex_files:
+            raise SystemExit("D8 không tạo ra file dex nào")
+        for dex in dex_files:
+            apk.write(dex, dex.name)
+        # libdexkit.so: lưu không nén để zipalign -p căn trang 4KB
+        for abi in ABIS:
+            so = ROOT / "libs" / abi / "libdexkit.so"
+            if so.is_file():
+                apk.write(so, f"lib/{abi}/libdexkit.so", compress_type=zipfile.ZIP_STORED)
         for asset in (ROOT / "assets").rglob("*"):
             if asset.is_file():
                 apk.write(asset, "assets/" + asset.relative_to(ROOT / "assets").as_posix())
     aligned = BUILD / "aligned.apk"
-    run(abt("zipalign.exe"), "-f", "4", unsigned, aligned)
+    run(abt("zipalign.exe"), "-f", "-p", "4", unsigned, aligned)
     release_mode = os.environ.get("TIKGOON_RELEASE") == "1"
     release_key = os.environ.get("TIKGOON_KEYSTORE_BASE64")
     if release_mode and not release_key:
