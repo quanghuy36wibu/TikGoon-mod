@@ -1,5 +1,7 @@
 package dev.tiktokrootmod;
 
+import android.animation.ArgbEvaluator;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
@@ -29,12 +31,13 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
-import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -176,10 +179,6 @@ public final class SettingsActivity extends Activity {
         stTikTok = statusRow(live, "TikTok", null);
         stHook = statusRow(live, "Hook trong TikTok", null);
         stConfig = statusRow(live, "Cấu hình đồng bộ", null);
-        LinearLayout monitor = toggle(live, "Theo dõi trực tiếp", "Quét root mỗi 10 giây", "live_monitor", true, false);
-        liveUpdated = (TextView) monitor.getTag();
-        toggle(live, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
-                "auto_restart", false, false);
         action(live, "Khởi động lại TikTok ngay", "Buộc dừng rồi mở lại bằng root", this::confirmRestart);
         note(live, "Sau khi đổi cài đặt, buộc dừng và mở lại TikTok. Chạm vào dòng Quyền root để kiểm tra lại ngay. KernelSU có thể hiện thông báo mỗi lần quét.");
 
@@ -318,6 +317,13 @@ public final class SettingsActivity extends Activity {
     }
 
     private void buildAdvanced(LinearLayout p) {
+        section(p, "Giám sát và khởi động lại");
+        LinearLayout monitorCard = card(p);
+        LinearLayout monitor = toggle(monitorCard, "Theo dõi trực tiếp", "Quét root mỗi 10 giây", "live_monitor", true, false);
+        liveUpdated = (TextView) monitor.getTag();
+        toggle(monitorCard, "Tự khởi động lại TikTok", "Sau khi đổi cài đặt xong (đợi 3 giây không đổi thêm), dùng root",
+                "auto_restart", false, false);
+
         section(p, "Tải media");
         LinearLayout media = card(p);
         toggle(media, "Bỏ watermark khi tải video", "Dùng nút tải sẵn có của TikTok", "remove_download_watermark", false);
@@ -362,14 +368,110 @@ public final class SettingsActivity extends Activity {
         tabLabels.add(name);
     }
 
+    private int currentTab = -1;
+
     private void selectTab(int selected) {
+        boolean animate = currentTab != -1 && currentTab != selected;
         for (int i = 0; i < pages.size(); i++) {
             boolean on = i == selected;
-            pages.get(i).setVisibility(on ? View.VISIBLE : View.GONE);
+            View page = pages.get(i);
+            page.animate().cancel();
+            page.setVisibility(on ? View.VISIBLE : View.GONE);
+            if (on && animate) {
+                // Trang mới trượt nhẹ từ phía tab được chọn và hiện dần
+                float dir = selected > currentTab ? 1f : -1f;
+                page.setAlpha(0f);
+                page.setTranslationX(dir * dp(28));
+                page.animate().alpha(1f).translationX(0f).setDuration(260)
+                        .setInterpolator(new DecelerateInterpolator(1.6f)).start();
+            } else {
+                page.setAlpha(1f);
+                page.setTranslationX(0f);
+            }
             tabPills.get(i).setBackground(on ? round(CARD_HI, 16) : null);
             tabIcons.get(i).setColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTextColor(on ? TEXT : TEXT_SUB);
             tabLabels.get(i).setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
+            if (on && animate) {
+                // Viên thuốc đánh dấu tab nảy nhẹ khi được chọn
+                View pill = tabPills.get(i);
+                pill.setScaleX(0.6f);
+                pill.setScaleY(0.6f);
+                pill.animate().scaleX(1f).scaleY(1f).setDuration(320)
+                        .setInterpolator(new OvershootInterpolator(2.2f)).start();
+            }
+        }
+        currentTab = selected;
+    }
+
+    /** Công tắc kiểu Material 3: nút tròn trượt, đổi kích thước và đổi màu mượt. */
+    private static final class M3Switch extends View {
+        interface OnChange { void onChange(boolean checked); }
+
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF track = new RectF();
+        private final ArgbEvaluator argb = new ArgbEvaluator();
+        private final float density;
+        private boolean checked;
+        private float progress;          // 0 = tắt, 1 = bật
+        private ValueAnimator animator;
+        private OnChange listener;
+
+        M3Switch(Context context) {
+            super(context);
+            density = context.getResources().getDisplayMetrics().density;
+        }
+
+        void setOnChange(OnChange value) { listener = value; }
+
+        boolean isChecked() { return checked; }
+
+        void toggle() {
+            setChecked(!checked, true);
+            if (listener != null) listener.onChange(checked);
+            performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+        }
+
+        void setChecked(boolean value, boolean animate) {
+            checked = value;
+            if (animator != null) animator.cancel();
+            float target = value ? 1f : 0f;
+            if (!animate || !isAttachedToWindow()) {
+                progress = target;
+                invalidate();
+                return;
+            }
+            animator = ValueAnimator.ofFloat(progress, target);
+            animator.setDuration(300);
+            animator.setInterpolator(new OvershootInterpolator(1.4f));
+            animator.addUpdateListener(a -> {
+                progress = (Float) a.getAnimatedValue();
+                invalidate();
+            });
+            animator.start();
+        }
+
+        @Override protected void onMeasure(int w, int h) {
+            setMeasuredDimension(Math.round(52 * density), Math.round(32 * density));
+        }
+
+        @Override protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (animator != null) animator.cancel();
+        }
+
+        @Override protected void onDraw(Canvas c) {
+            float t = Math.max(0f, Math.min(1f, progress));
+            float w = getWidth(), h = getHeight();
+            track.set(0, 0, w, h);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor((Integer) argb.evaluate(t, OUTLINE, PRIMARY));
+            c.drawRoundRect(track, h / 2f, h / 2f, paint);
+            float radius = (9f + 3f * t) * density;          // nút to dần khi bật
+            float pad = 16f * density;
+            float cx = pad + (w - 2f * pad) * progress;       // có thể nảy quá nhẹ nhờ Overshoot
+            paint.setColor((Integer) argb.evaluate(t, TEXT_SUB, ON_PRIMARY));
+            c.drawCircle(cx, h / 2f, radius, paint);
         }
     }
 
@@ -584,12 +686,9 @@ public final class SettingsActivity extends Activity {
     private LinearLayout toggle(LinearLayout card, String title, String sub, String key, boolean fallback,
                                 boolean sync) {
         LinearLayout row = row(card, title, sub);
-        Switch control = new Switch(this);
-        int[][] states = {{android.R.attr.state_checked}, {}};
-        control.setThumbTintList(new ColorStateList(states, new int[]{ON_PRIMARY, TEXT_SUB}));
-        control.setTrackTintList(new ColorStateList(states, new int[]{PRIMARY, OUTLINE}));
-        control.setChecked(prefs.getBoolean(key, fallback));
-        control.setOnCheckedChangeListener((button, checked) -> {
+        M3Switch control = new M3Switch(this);
+        control.setChecked(prefs.getBoolean(key, fallback), false);
+        control.setOnChange(checked -> {
             prefs.edit().putBoolean(key, checked).apply();
             if (sync) syncSettings();
         });
