@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import base64
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
@@ -21,7 +22,19 @@ TOOLS = SDK / "build-tools/36.1.0"
 ANDROID_JAR = SDK / "platforms/android-36/android.jar"
 XPOSED_URL = "https://api.xposed.info/de/robv/android/xposed/api/82/api-82.jar"
 XPOSED_SHA256 = "f48c635f1c7469fdec0e00ad2ea0b7a6b2f5b55065784a35b7ca3a84615e8e25"
-FLATBUFFERS_URL = "https://repo.maven.apache.org/maven2/com/google/flatbuffers/flatbuffers-java/23.5.26/flatbuffers-java-23.5.26.jar"
+
+
+# ── Cross-platform: Windows dùng .exe/.bat, Linux/Mac bỏ đuôi ────────────────
+IS_WIN = platform.system() == "Windows"
+
+def _fix(name: str) -> str:
+    return name if IS_WIN else name.replace(".exe", "").replace(".bat", "")
+
+def jbin(name: str) -> Path:
+    return JDK / "bin" / _fix(name)
+
+def abt(name: str) -> Path:
+    return TOOLS / _fix(name)
 
 
 def run(*args: object) -> None:
@@ -29,7 +42,7 @@ def run(*args: object) -> None:
 
 
 def main() -> None:
-    for path in (JDK / "bin/javac.exe", TOOLS / "aapt.exe", TOOLS / "d8.bat", ANDROID_JAR):
+    for path in (jbin("javac.exe"), abt("aapt.exe"), abt("d8.bat"), ANDROID_JAR):
         if not path.is_file():
             raise SystemExit(f"Missing build dependency: {path}")
     BUILD.mkdir(exist_ok=True)
@@ -39,55 +52,31 @@ def main() -> None:
     if hashlib.sha256(api.read_bytes()).hexdigest() != XPOSED_SHA256:
         raise SystemExit("Xposed API jar checksum mismatch")
 
-    # DexKit's Android artifact is supplied as its classes.jar plus JNI libs.
-    dexkit_jar = ROOT / "libs/dexkit-classes.jar"
-    kotlin_jar = ROOT / "libs/kotlin-stdlib.jar"
-    flatbuffers_jar = ROOT / "libs/flatbuffers-java-23.5.26.jar"
-    if not flatbuffers_jar.exists():
-        urllib.request.urlretrieve(FLATBUFFERS_URL, flatbuffers_jar)
-    for dependency in (dexkit_jar, kotlin_jar, flatbuffers_jar):
-        if not dependency.is_file():
-            raise SystemExit(f"Missing DexKit dependency: {dependency}")
-
     classes = BUILD / "classes"
     classes.mkdir(exist_ok=True)
     sources = sorted((ROOT / "src").rglob("*.java"))
     if not sources:
         raise SystemExit("No Java sources")
-    dependency_jars = (str(ANDROID_JAR), str(api), str(dexkit_jar), str(kotlin_jar), str(flatbuffers_jar))
-    run(JDK / "bin/javac.exe", "-source", "8", "-target", "8", "-encoding", "UTF-8",
-        "-cp", os.pathsep.join(dependency_jars), "-d", classes, *sources)
+    run(jbin("javac.exe"), "-source", "8", "-target", "8", "-encoding", "UTF-8",
+        "-cp", os.pathsep.join((str(ANDROID_JAR), str(api))), "-d", classes, *sources)
     class_jar = BUILD / "classes.jar"
-    run(JDK / "bin/jar.exe", "cf", class_jar, "-C", classes, ".")
+    run(jbin("jar.exe"), "cf", class_jar, "-C", classes, ".")
     dex_dir = BUILD / "dex"
     dex_dir.mkdir(exist_ok=True)
-    run(TOOLS / "d8.bat", "--min-api", "23", "--lib", ANDROID_JAR, "--classpath", api,
-        "--output", dex_dir, class_jar, dexkit_jar, kotlin_jar, flatbuffers_jar)
+    run(abt("d8.bat"), "--min-api", "23", "--lib", ANDROID_JAR, "--classpath", api,
+        "--output", dex_dir, class_jar)
 
     unsigned = BUILD / "unsigned.apk"
-    run(TOOLS / "aapt.exe", "package", "-f", "-M", ROOT / "AndroidManifest.xml",
+    run(abt("aapt.exe"), "package", "-f", "-M", ROOT / "AndroidManifest.xml",
         "-S", ROOT / "res",
         "-I", ANDROID_JAR, "-F", unsigned)
-    # D8 may emit classes2.dex and beyond when the dependency graph grows.
-    dex_files = sorted(
-        dex_dir.glob("classes*.dex"),
-        key=lambda path: (1 if path.stem == "classes" else int(path.stem.removeprefix("classes"))),
-    )
-    if not dex_files or not (dex_dir / "classes.dex").is_file():
-        raise SystemExit("D8 did not produce classes.dex")
-
     with zipfile.ZipFile(unsigned, "a") as apk:
-        for dex_file in dex_files:
-            apk.write(dex_file, dex_file.name)
+        apk.write(dex_dir / "classes.dex", "classes.dex")
         for asset in (ROOT / "assets").rglob("*"):
             if asset.is_file():
                 apk.write(asset, "assets/" + asset.relative_to(ROOT / "assets").as_posix())
-        for abi_dir in (ROOT / "libs").iterdir():
-            if abi_dir.is_dir():
-                for native in abi_dir.glob("*.so"):
-                    apk.write(native, "lib/" + abi_dir.name + "/" + native.name)
     aligned = BUILD / "aligned.apk"
-    run(TOOLS / "zipalign.exe", "-f", "4", unsigned, aligned)
+    run(abt("zipalign.exe"), "-f", "4", unsigned, aligned)
     release_mode = os.environ.get("TIKGOON_RELEASE") == "1"
     release_key = os.environ.get("TIKGOON_KEYSTORE_BASE64")
     if release_mode and not release_key:
@@ -106,7 +95,7 @@ def main() -> None:
         alias = "androiddebugkey"
         password_args = ("--ks-pass", "pass:android", "--key-pass", "pass:android")
     if not keystore.exists():
-        run(JDK / "bin/keytool.exe", "-genkeypair", "-noprompt", "-keystore", keystore,
+        run(jbin("keytool.exe"), "-genkeypair", "-noprompt", "-keystore", keystore,
             "-storepass", "android", "-keypass", "android", "-alias", "androiddebugkey",
             "-dname", "CN=Android Debug,O=Android,C=US", "-keyalg", "RSA", "-keysize", "2048",
             "-validity", "10000")
@@ -114,9 +103,9 @@ def main() -> None:
     version = manifest.attrib["{http://schemas.android.com/apk/res/android}versionName"]
     output = BUILD / (f"TikGoon-v{version}.apk" if release_mode else "TikGoon-debug.apk")
     shutil.copy2(aligned, output)
-    run(TOOLS / "apksigner.bat", "sign", "--ks", keystore, "--ks-key-alias",
+    run(abt("apksigner.bat"), "sign", "--ks", keystore, "--ks-key-alias",
         alias, *password_args, output)
-    run(TOOLS / "apksigner.bat", "verify", "--verbose", output)
+    run(abt("apksigner.bat"), "verify", "--verbose", output)
     print(f"Built {output}")
     digest = hashlib.sha256(output.read_bytes()).hexdigest()
     print(f"SHA-256 {digest}")
