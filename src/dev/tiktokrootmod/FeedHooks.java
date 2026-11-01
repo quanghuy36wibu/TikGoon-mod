@@ -557,9 +557,7 @@ final class FeedHooks {
                 if (v != null) return "series:getMixInfo=" + v.getClass().getSimpleName();
             }
             if (Config.HIDE_PAID) {
-                if (Boolean.TRUE.equals(call(item, "isPaidContent"))) return "paid:isPaidContent=true";
-                Object v = call(item, "getMPaidContentInfo");
-                if (v != null) return "paid:getMPaidContentInfo=" + v.getClass().getSimpleName();
+                if (isPaid(item)) return "paid";
             }
             return "other(filter-words/min-likes/views/time)";
         } catch (Throwable error) {
@@ -614,14 +612,7 @@ final class FeedHooks {
             return true;
         }
 
-        if (Config.HIDE_PAID &&
-                (
-                    Boolean.TRUE.equals(
-                            call(item, "isPaidContent")
-                    )
-                    ||
-                    call(item, "getMPaidContentInfo") != null
-                )) {
+        if (Config.HIDE_PAID && isPaid(item)) {
             return true;
         }
 
@@ -682,6 +673,40 @@ final class FeedHooks {
         return Config.MIN_VIEWS > 0 &&
                 views instanceof Number &&
                 longValue(views) < Config.MIN_VIEWS;
+    }
+
+    private static int paidDumps;
+
+    /**
+     * getMPaidContentInfo trên TikTok 47.5.3 trả về một đối tượng PaidContentInfo cho MỌI video
+     * (kể cả không trả phí), nên chỉ kiểm tra "khác null" sẽ ẩn hết feed. Giờ chỉ coi là trả phí
+     * khi isPaidContent=true hoặc đối tượng này có trường mang giá trị thật (true, số khác 0,
+     * chuỗi/danh sách không rỗng).
+     */
+    private static boolean isPaid(Object item) {
+        if (Boolean.TRUE.equals(call(item, "isPaidContent"))) return true;
+        Object info = call(item, "getMPaidContentInfo");
+        if (info == null) return false;
+        boolean meaningful = false;
+        StringBuilder dump = Config.LOG_ENABLED && paidDumps < 3 ? new StringBuilder() : null;
+        try {
+            for (java.lang.reflect.Field field : info.getClass().getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(field.getModifiers())) continue;
+                field.setAccessible(true);
+                Object value = field.get(info);
+                if (dump != null) dump.append(field.getName()).append('=').append(value).append(' ');
+                if (value instanceof Boolean) meaningful |= (Boolean) value;
+                else if (value instanceof Number) meaningful |= ((Number) value).doubleValue() > 0;
+                else if (value instanceof CharSequence) meaningful |= ((CharSequence) value).length() > 0;
+                else if (value instanceof java.util.Collection) meaningful |= !((java.util.Collection<?>) value).isEmpty();
+            }
+        } catch (Throwable ignored) { }
+        if (dump != null) {
+            paidDumps++;
+            HookLog.log("TikTokRootMod: PaidContentInfo " + info.getClass().getSimpleName() + " -> "
+                    + dump + "=> paid=" + meaningful);
+        }
+        return meaningful;
     }
 
     private static boolean isAd(Object item) {

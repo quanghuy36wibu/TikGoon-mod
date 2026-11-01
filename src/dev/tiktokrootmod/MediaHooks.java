@@ -43,8 +43,19 @@ final class MediaHooks {
             XC_MethodHook source = new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     try {
+                        String via = "noWatermark";
                         Object clean = XposedHelpers.callMethod(param.thisObject, "getDownloadNoWatermarkAddr");
-                        if (clean != null) { param.setResult(clean); fire("Video." + param.method.getName()); }
+                        if (clean == null) {
+                            // Không có địa chỉ tải sạch: dùng địa chỉ phát (thường không có watermark)
+                            via = "playH264";
+                            clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddrH264");
+                        }
+                        if (clean == null) {
+                            via = "play";
+                            clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddr");
+                        }
+                        if (clean != null) { param.setResult(clean); fire("Video." + param.method.getName() + " via " + via); }
+                        else fire("Video." + param.method.getName() + " NO clean source at all");
                     } catch (Throwable error) { HookLog.log("TikTokRootMod: no-watermark source unavailable: " + error); }
                 }
             };
