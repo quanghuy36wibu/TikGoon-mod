@@ -42,6 +42,9 @@ public final class Config {
     public static String REGION_OPERATOR_NAME = "Beeline";
     public static long MIN_LIKES = 0;
     public static long MIN_VIEWS = 0;
+    public static long MAX_LIKES = 0;   // 0 = tắt (theo bộ lọc LikeCountFilter của Morphe)
+    public static long MAX_VIEWS = 0;   // 0 = tắt
+    public static boolean HIDE_SHOP = false;
     public static long MIN_PUBLISH_TIME_SECONDS = 0;
     public static String FILTER_WORDS = "";
 
@@ -100,6 +103,9 @@ public final class Config {
             REGION_OPERATOR_NAME = values.optString("region_operator_name", REGION_OPERATOR_NAME);
             MIN_LIKES = Math.max(0, values.optLong("min_likes", MIN_LIKES));
             MIN_VIEWS = Math.max(0, values.optLong("min_views", MIN_VIEWS));
+            MAX_LIKES = Math.max(0, values.optLong("max_likes", MAX_LIKES));
+            MAX_VIEWS = Math.max(0, values.optLong("max_views", MAX_VIEWS));
+            HIDE_SHOP = values.optBoolean("hide_shop", HIDE_SHOP);
             MIN_PUBLISH_TIME_SECONDS = Math.max(0, values.optLong("min_publish_time", MIN_PUBLISH_TIME_SECONDS));
             FILTER_WORDS = values.optString("filter_words", FILTER_WORDS);
             LOG_ENABLED = values.optBoolean("log_enabled", LOG_ENABLED);

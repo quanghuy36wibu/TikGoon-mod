@@ -85,6 +85,8 @@ public final class SettingsActivity extends Activity {
     private SharedPreferences prefs;
     private EditText likes;
     private EditText views;
+    private EditText maxLikes;
+    private EditText maxViews;
     private EditText publishTime;
     private EditText filterWords;
     private EditText regionIso;
@@ -188,6 +190,7 @@ public final class SettingsActivity extends Activity {
         toggle(feed, "Ẩn livestream", null, "hide_lives", false);
         toggle(feed, "Ẩn bài ảnh", null, "hide_photos", false);
         toggle(feed, "Ẩn story", null, "hide_stories", false);
+        toggle(feed, "Ẩn video bán hàng (TikTok Shop)", "Theo bộ lọc Shop của Morphe", "hide_shop", false);
         toggle(feed, "Ẩn mini-series", null, "hide_series", false);
         toggle(feed, "Ẩn nội dung trả phí", null, "hide_paid", false);
         toggle(feed, "Ẩn banner khuyến mãi", null, "hide_promo", true);
@@ -296,6 +299,8 @@ public final class SettingsActivity extends Activity {
         LinearLayout filter = card(p);
         likes = number(filter, "Lượt thích tối thiểu (0 = tắt)", "min_likes");
         views = number(filter, "Lượt xem tối thiểu (0 = tắt)", "min_views");
+        maxLikes = number(filter, "Lượt thích tối đa (0 = tắt)", "max_likes");
+        maxViews = number(filter, "Lượt xem tối đa (0 = tắt)", "max_views");
         publishTime = number(filter, "Thời điểm đăng tối thiểu, Unix giây (0 = tắt)", "min_publish_time");
         TextView wordsLabel = text("Từ khóa cần ẩn (ngăn cách bằng dấu phẩy)", 14, TEXT_SUB);
         wordsLabel.setPadding(dp(20), dp(12), dp(20), dp(6));
@@ -1295,6 +1300,8 @@ public final class SettingsActivity extends Activity {
         try {
             long minLikes = parse(likes);
             long minViews = parse(views);
+            long maxLikesValue = parse(maxLikes);
+            long maxViewsValue = parse(maxViews);
             long minTime = parse(publishTime);
             String iso = regionIso.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
             String operator = regionOperator.getText().toString().trim();
@@ -1304,6 +1311,7 @@ public final class SettingsActivity extends Activity {
                 return;
             }
             prefs.edit().putLong("min_likes", minLikes).putLong("min_views", minViews)
+                    .putLong("max_likes", maxLikesValue).putLong("max_views", maxViewsValue)
                     .putLong("min_publish_time", minTime)
                     .putString("filter_words", filterWords.getText().toString().trim())
                     .putString("region_iso", iso).putString("region_operator", operator)
@@ -1349,7 +1357,7 @@ public final class SettingsActivity extends Activity {
     private String encodedSettings() throws Exception {
         JSONObject values = new JSONObject();
         for (String key : new String[]{"hide_ads", "hide_lives", "hide_photos", "hide_stories",
-                "hide_series", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
+                "hide_series", "hide_shop", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
                 "disable_live_auto_translate", "theme_rainbow",
@@ -1376,6 +1384,8 @@ public final class SettingsActivity extends Activity {
         values.put("filter_words", prefs.getString("filter_words", ""));
         values.put("min_likes", prefs.getLong("min_likes", 0));
         values.put("min_views", prefs.getLong("min_views", 0));
+        values.put("max_likes", prefs.getLong("max_likes", 0));
+        values.put("max_views", prefs.getLong("max_views", 0));
         values.put("min_publish_time", prefs.getLong("min_publish_time", 0));
         return Base64.encodeToString(values.toString().getBytes("UTF-8"), Base64.NO_WRAP);
     }

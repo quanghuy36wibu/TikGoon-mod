@@ -552,7 +552,8 @@ final class FeedHooks {
         try {
             if (Config.HIDE_ADS && isAd(item)) return "ad";
             if (Config.HIDE_LIVES && isLive(item)) return "live";
-            if (Config.HIDE_PHOTOS && call(item, "getPhotoModeImageInfo") != null) return "photo";
+            if (Config.HIDE_PHOTOS && isPhotoPost(item)) return "photo";
+            if (Config.HIDE_SHOP && isShop(item)) return "shop";
             if (Config.HIDE_STORIES) {
                 if (Boolean.TRUE.equals(call(item, "getIsTikTokStory"))) return "story:getIsTikTokStory=true";
                 Object v = call(item, "getStory");
@@ -597,8 +598,11 @@ final class FeedHooks {
             return true;
         }
 
-        if (Config.HIDE_PHOTOS &&
-                call(item, "getPhotoModeImageInfo") != null) {
+        if (Config.HIDE_PHOTOS && isPhotoPost(item)) {
+            return true;
+        }
+
+        if (Config.HIDE_SHOP && isShop(item)) {
             return true;
         }
 
@@ -678,9 +682,39 @@ final class FeedHooks {
             return true;
         }
 
+        if (Config.MAX_LIKES > 0 &&
+                likes instanceof Number &&
+                longValue(likes) > Config.MAX_LIKES) {
+
+            return true;
+        }
+
+        if (Config.MAX_VIEWS > 0 &&
+                views instanceof Number &&
+                longValue(views) > Config.MAX_VIEWS) {
+
+            return true;
+        }
+
         return Config.MIN_VIEWS > 0 &&
                 views instanceof Number &&
                 longValue(views) < Config.MIN_VIEWS;
+    }
+
+    /** Bài ảnh (ImageVideoFilter của Morphe): có danh sách ảnh, hoặc thông tin ảnh/chữ kiểu photo mode. */
+    private static boolean isPhotoPost(Object item) {
+        Object images = call(item, "getImageInfos");
+        if (images instanceof java.util.Collection && !((java.util.Collection<?>) images).isEmpty()) {
+            return true;
+        }
+        return call(item, "getPhotoModeImageInfo") != null
+                || call(item, "getPhotoModeTextInfo") != null;
+    }
+
+    /** Video bán hàng / TikTok Shop (ShopFilter của Morphe): đường dẫn chia sẻ chứa placeholder_product_id. */
+    private static boolean isShop(Object item) {
+        Object url = call(item, "getShareUrl");
+        return url instanceof String && ((String) url).contains("placeholder_product_id");
     }
 
     private static int paidDumps;
@@ -724,6 +758,16 @@ final class FeedHooks {
         }
 
         if (callExt(item, "getMonetizationData") != null) {
+            return true;
+        }
+
+        // Bộ lọc quảng cáo của Morphe (AdsFilter): isAd / isSoftAd / nhạc quảng bá / dữ liệu quảng cáo thô
+        for (String method : new String[] {"isAd", "isSoftAd", "isWithPromotionalMusic"}) {
+            if (Boolean.TRUE.equals(call(item, method))) {
+                return true;
+            }
+        }
+        if (call(item, "getAwemeRawAd") != null) {
             return true;
         }
 
