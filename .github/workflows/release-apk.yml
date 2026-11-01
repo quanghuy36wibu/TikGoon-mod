@@ -2,8 +2,8 @@ name: Release APK
 
 on:
   push:
-    tags: ['v*']            # push tag dạng v0.8.7 là tự build và đăng lên Releases
-  workflow_dispatch:        # hoặc chạy tay: Actions -> Release APK -> Run workflow
+    tags: ['v*']
+  workflow_dispatch:
     inputs:
       tag:
         description: 'Tên tag/phiên bản (ví dụ v0.8.7)'
@@ -11,10 +11,9 @@ on:
         type: string
 
 permissions:
-  contents: write           # cần để tạo Release
+  contents: write
 
 env:
-  # Đủ cả 4 secret keystore -> ký bằng khóa cố định (cài đè được). Thiếu -> khóa debug.
   SIGNED: ${{ secrets.TIKGOON_KEYSTORE_BASE64 != '' && secrets.TIKGOON_KEYSTORE_PASSWORD != '' && secrets.TIKGOON_KEY_ALIAS != '' && secrets.TIKGOON_KEY_PASSWORD != '' && '1' || '0' }}
 
 jobs:
@@ -32,10 +31,10 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-36" "build-tools;36.1.0"
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses <<< $'y\ny\ny\ny\ny\ny\ny\n' > /dev/null 2>&1 || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;36.1.0"
 
       - name: Build APK
         run: python build.py
