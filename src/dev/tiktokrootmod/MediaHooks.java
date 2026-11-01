@@ -44,6 +44,25 @@ final class MediaHooks {
         }
     }
 
+    /** Rút gọn địa chỉ để ghi log (bỏ phần query/token). */
+    private static String urlInfo(Object model) {
+        if (model == null) return "null";
+        try {
+            Object list = XposedHelpers.callMethod(model, "getUrlList");
+            if (list instanceof java.util.List && !((java.util.List<?>) list).isEmpty()) {
+                String url = String.valueOf(((java.util.List<?>) list).get(0));
+                int q = url.indexOf('?');
+                String base = q >= 0 ? url.substring(0, q) : url;
+                String query = q >= 0 ? url.substring(q + 1) : "";
+                String flags = query.contains("watermark") || query.contains("logo") ? " [query có watermark/logo]" : "";
+                return base.substring(0, Math.min(base.length(), 90)) + flags;
+            }
+            return "empty";
+        } catch (Throwable error) {
+            return "?" + error.getClass().getSimpleName();
+        }
+    }
+
     /** Lấy Video từ Aweme và vá địa chỉ tải ngay trong trường dữ liệu (R8 có thể đã inline hàm get). */
     static void patchAweme(Object aweme) {
         if (!Config.REMOVE_DOWNLOAD_WATERMARK || aweme == null) return;
@@ -57,10 +76,20 @@ final class MediaHooks {
             PATCHED.put(video, Boolean.TRUE);
         }
         try {
-            String via = "noWatermark";
-            Object clean = safeCall(video, "getDownloadNoWatermarkAddr");
-            if (clean == null) { via = "playH264"; clean = safeCall(video, "getPlayAddrH264"); }
-            if (clean == null) { via = "play"; clean = safeCall(video, "getPlayAddr"); }
+            Object orig = null;
+            try {
+                java.lang.reflect.Field of = video.getClass().getDeclaredField("downloadAddr");
+                of.setAccessible(true);
+                orig = of.get(video);
+            } catch (Throwable ignored) { }
+            Object noWm = safeCall(video, "getDownloadNoWatermarkAddr");
+            Object h264 = safeCall(video, "getPlayAddrH264");
+            Object play = safeCall(video, "getPlayAddr");
+            // Địa chỉ phát (stream) không có watermark; địa chỉ "tải" thì có thể đã gắn logo từ phía máy chủ.
+            String via = "playH264";
+            Object clean = h264;
+            if (clean == null) { via = "play"; clean = play; }
+            if (clean == null) { via = "noWatermark"; clean = noWm; }
             if (!dumpedFields && Config.LOG_ENABLED) {
                 dumpedFields = true;
                 StringBuilder names = new StringBuilder();
@@ -69,12 +98,15 @@ final class MediaHooks {
                             .append(f.getType().getSimpleName()).append(' ');
                 HookLog.log("TikTokRootMod: Video url fields: " + names);
             }
+            if (patchLogs < 4 && Config.LOG_ENABLED)
+                HookLog.log("TikTokRootMod: urls orig=" + urlInfo(orig) + " | noWm=" + urlInfo(noWm)
+                        + " | h264=" + urlInfo(h264) + " | play=" + urlInfo(play));
             if (clean == null) {
                 if (patchLogs++ < 3) HookLog.log("TikTokRootMod: patchVideo: no clean source for a Video");
                 return;
             }
             int set = 0;
-            for (String name : new String[]{"downloadAddr", "newDownloadAddr"}) {
+            for (String name : new String[]{"downloadAddr", "newDownloadAddr", "downloadNoWatermarkAddr"}) {
                 try {
                     java.lang.reflect.Field f = video.getClass().getDeclaredField(name);
                     f.setAccessible(true);
@@ -99,16 +131,13 @@ final class MediaHooks {
             XC_MethodHook source = new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     try {
-                        String via = "noWatermark";
-                        Object clean = XposedHelpers.callMethod(param.thisObject, "getDownloadNoWatermarkAddr");
+                        // Thứ tự giống patchVideo: địa chỉ phát trước, địa chỉ "không watermark" sau cùng
+                        String via = "playH264";
+                        Object clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddrH264");
+                        if (clean == null) { via = "play"; clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddr"); }
                         if (clean == null) {
-                            // Không có địa chỉ tải sạch: dùng địa chỉ phát (thường không có watermark)
-                            via = "playH264";
-                            clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddrH264");
-                        }
-                        if (clean == null) {
-                            via = "play";
-                            clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddr");
+                            via = "noWatermark";
+                            clean = XposedHelpers.callMethod(param.thisObject, "getDownloadNoWatermarkAddr");
                         }
                         if (clean != null) { param.setResult(clean); fire("Video." + param.method.getName() + " via " + via); }
                         else fire("Video." + param.method.getName() + " NO clean source at all");
