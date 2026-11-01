@@ -10,7 +10,7 @@ import de.robv.android.xposed.XposedHelpers;
 final class MediaHooks {
     private MediaHooks() {}
 
-    private static int fired;
+    private static int fired, ljffLogs;
 
     private static final java.util.HashMap<String, Integer> TRACES = new java.util.HashMap<>();
 
@@ -33,7 +33,7 @@ final class MediaHooks {
     }
 
     private static final java.util.WeakHashMap<Object, Boolean> PATCHED = new java.util.WeakHashMap<>();
-    private static int patchLogs;
+    private static int patchLogs, urlLogs;
     private static boolean dumpedFields;
 
     private static Object safeCall(Object target, String name) {
@@ -106,7 +106,7 @@ final class MediaHooks {
                 return;
             }
             int set = 0;
-            for (String name : new String[]{"downloadAddr", "newDownloadAddr", "downloadNoWatermarkAddr"}) {
+            for (String name : new String[]{"downloadAddr", "newDownloadAddr", "downloadNoWatermarkAddr", "uiAlikeAddr"}) {
                 try {
                     java.lang.reflect.Field f = video.getClass().getDeclaredField(name);
                     f.setAccessible(true);
@@ -139,7 +139,13 @@ final class MediaHooks {
                             via = "noWatermark";
                             clean = XposedHelpers.callMethod(param.thisObject, "getDownloadNoWatermarkAddr");
                         }
-                        if (clean != null) { param.setResult(clean); fire("Video." + param.method.getName() + " via " + via); }
+                        if (clean != null) {
+                            Object original = param.getResult();
+                            param.setResult(clean);
+                            fire("Video." + param.method.getName() + " via " + via);
+                            if (urlLogs++ < 6) HookLog.log("TikTokRootMod: " + param.method.getName()
+                                    + " gốc=" + urlInfo(original) + " | thay bằng=" + urlInfo(clean));
+                        }
                         else fire("Video." + param.method.getName() + " NO clean source at all");
                     } catch (Throwable error) { HookLog.log("TikTokRootMod: no-watermark source unavailable: " + error); }
                 }
@@ -148,6 +154,29 @@ final class MediaHooks {
             Set<?> b = XposedBridge.hookAllMethods(video, "getNewDownloadAddr", source);
             HookLog.log("TikTokRootMod: Video class found; getDownloadAddr hooks=" + a.size()
                     + ", getNewDownloadAddr hooks=" + b.size());
+            // Các getter UrlModel khác liên quan tới tải (uiAlike, caption...): getter "uiAlike" bị thay bằng
+            // địa chỉ sạch, còn lại chỉ ghi log để biết luồng tải đang dùng cái nào.
+            for (Method m : video.getDeclaredMethods()) {
+                if (m.getParameterTypes().length != 0 || !m.getReturnType().getSimpleName().equals("UrlModel")) continue;
+                String n = m.getName();
+                if (n.equals("getDownloadAddr") || n.equals("getNewDownloadAddr")) continue;
+                if (!(n.toLowerCase().contains("download") || n.toLowerCase().contains("alike")
+                        || n.toLowerCase().contains("caption"))) continue;
+                final boolean replace = n.toLowerCase().contains("alike");
+                XposedBridge.hookMethod(m, new XC_MethodHook() {
+                    @Override protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            if (replace) {
+                                Object clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddrH264");
+                                if (clean == null) clean = XposedHelpers.callMethod(param.thisObject, "getPlayAddr");
+                                if (clean != null) param.setResult(clean);
+                            }
+                            fire("Video." + param.method.getName() + (replace ? " (replaced)" : " (log only)"));
+                        } catch (Throwable error) { HookLog.log("TikTokRootMod: getter hook: " + error); }
+                    }
+                });
+                HookLog.log("TikTokRootMod: hooked extra Video getter " + n + (replace ? " (replace)" : " (log only)"));
+            }
         } else {
             HookLog.log("TikTokRootMod: MISSING class com.ss.android.ugc.aweme.feed.model.Video");
         }
@@ -196,10 +225,23 @@ final class MediaHooks {
                     @Override protected void beforeHookedMethod(MethodHookParam param) {
                         param.setResult(null);
                         fire("native watermark ability " + param.method.getName());
+                        if (ljffLogs++ < 3) HookLog.log("TikTokRootMod: LJFF called with arg="
+                                + (param.args.length > 0 && param.args[0] != null
+                                    ? param.args[0].getClass().getName() : "null"));
                     }
                 });
                 hooked++;
                 HookLog.log("TikTokRootMod: native video watermark ability disabled via " + method.getName());
+                StringBuilder ifc = new StringBuilder();
+                for (Method im : method.getReturnType().getMethods())
+                    ifc.append(im.getName()).append('(').append(im.getParameterTypes().length).append(")->")
+                            .append(im.getReturnType().getSimpleName()).append(' ');
+                HookLog.log("TikTokRootMod: " + method.getReturnType().getSimpleName() + " methods: " + ifc);
+                StringBuilder cfg = new StringBuilder();
+                for (Method cm : type.getDeclaredMethods())
+                    cfg.append(cm.getName()).append('(').append(cm.getParameterTypes().length).append(")->")
+                            .append(cm.getReturnType().getSimpleName()).append(' ');
+                HookLog.log("TikTokRootMod: AwemeVideoDownloadConfiguration methods: " + cfg);
             } catch (Throwable error) { HookLog.log("TikTokRootMod: watermark hook: " + error); }
         }
         if (hooked == 0) {
