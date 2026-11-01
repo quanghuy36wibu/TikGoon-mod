@@ -524,10 +524,47 @@ final class FeedHooks {
         return output == null ? input : output;
     }
 
+    private static final java.util.HashMap<String, Integer> REASONS = new java.util.HashMap<>();
+
     private static boolean shouldHide(Object item) {
         boolean hide = shouldHideInner(item);
-        if (hide) hiddenTotal++;
+        if (hide) {
+            hiddenTotal++;
+            String why = why(item);
+            Integer n = REASONS.get(why);
+            n = n == null ? 1 : n + 1;
+            REASONS.put(why, n);
+            if (n <= 3) HookLog.log("TikTokRootMod: feed item hidden, reason=" + why + " (lần " + n + ")");
+        }
         return hide;
+    }
+
+    /** Chẩn đoán: cho biết điều kiện nào làm mục bị ẩn (chỉ gọi khi mục đã bị ẩn). */
+    private static String why(Object item) {
+        try {
+            if (Config.HIDE_ADS && isAd(item)) return "ad";
+            if (Config.HIDE_LIVES && isLive(item)) return "live";
+            if (Config.HIDE_PHOTOS && call(item, "getPhotoModeImageInfo") != null) return "photo";
+            if (Config.HIDE_STORIES) {
+                if (Boolean.TRUE.equals(call(item, "getIsTikTokStory"))) return "story:getIsTikTokStory=true";
+                Object v = call(item, "getStory");
+                if (v != null) return "story:getStory=" + v.getClass().getSimpleName();
+                v = call(item, "getUserStory");
+                if (v != null) return "story:getUserStory=" + v.getClass().getSimpleName();
+            }
+            if (Config.HIDE_SERIES) {
+                Object v = call(item, "getMixInfo");
+                if (v != null) return "series:getMixInfo=" + v.getClass().getSimpleName();
+            }
+            if (Config.HIDE_PAID) {
+                if (Boolean.TRUE.equals(call(item, "isPaidContent"))) return "paid:isPaidContent=true";
+                Object v = call(item, "getMPaidContentInfo");
+                if (v != null) return "paid:getMPaidContentInfo=" + v.getClass().getSimpleName();
+            }
+            return "other(filter-words/min-likes/views/time)";
+        } catch (Throwable error) {
+            return "unknown:" + error;
+        }
     }
 
     private static boolean shouldHideInner(Object item) {

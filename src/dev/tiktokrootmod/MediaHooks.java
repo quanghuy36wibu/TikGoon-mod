@@ -12,8 +12,24 @@ final class MediaHooks {
 
     private static int fired;
 
+    private static final java.util.HashMap<String, Integer> TRACES = new java.util.HashMap<>();
+
     private static void fire(String what) {
         if (fired++ < 30) HookLog.log("TikTokRootMod: watermark hook fired: " + what);
+        if (!Config.LOG_ENABLED) return;
+        Integer n = TRACES.get(what);
+        if (n != null && n >= 1) return;       // mỗi loại chỉ ghi ngăn xếp gọi 1 lần
+        TRACES.put(what, 1);
+        StringBuilder sb = new StringBuilder("caller of " + what + ": ");
+        int count = 0;
+        for (StackTraceElement frame : new Throwable().getStackTrace()) {
+            String cls = frame.getClassName();
+            if (cls.startsWith("de.robv") || cls.startsWith("LSPHooker") || cls.startsWith("dev.tiktokrootmod")
+                    || cls.startsWith("java.lang.reflect") || cls.startsWith("org.lsposed")) continue;
+            sb.append(cls).append('.').append(frame.getMethodName()).append(" < ");
+            if (++count >= 8) break;
+        }
+        HookLog.log("TikTokRootMod: " + sb);
     }
 
     static void install(ClassLoader loader) {
