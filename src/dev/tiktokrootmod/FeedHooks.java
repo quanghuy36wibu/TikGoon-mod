@@ -469,6 +469,13 @@ final class FeedHooks {
     private static int filterCalls, hiddenTotal;
 
     private static List<?> filter(List<?> input) {
+        if (Config.REMOVE_DOWNLOAD_WATERMARK) {
+            // Vá địa chỉ tải sạch ngay khi feed về (không phụ thuộc hàm get có bị inline hay không)
+            for (Object item : input) {
+                try { if (awemeClass != null && awemeClass.isInstance(item)) MediaHooks.patchAweme(item); }
+                catch (Throwable ignored) { }
+            }
+        }
         List<?> result = filterInner(input);
         if (filterCalls++ < 25 || result.size() != input.size())
             HookLog.log("TikTokRootMod: feed filter called: in=" + input.size() + " out=" + result.size()

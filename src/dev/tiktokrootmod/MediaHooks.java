@@ -32,6 +32,62 @@ final class MediaHooks {
         HookLog.log("TikTokRootMod: " + sb);
     }
 
+    private static final java.util.WeakHashMap<Object, Boolean> PATCHED = new java.util.WeakHashMap<>();
+    private static int patchLogs;
+    private static boolean dumpedFields;
+
+    private static Object safeCall(Object target, String name) {
+        try {
+            return XposedHelpers.callMethod(target, name);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /** Lấy Video từ Aweme và vá địa chỉ tải ngay trong trường dữ liệu (R8 có thể đã inline hàm get). */
+    static void patchAweme(Object aweme) {
+        if (!Config.REMOVE_DOWNLOAD_WATERMARK || aweme == null) return;
+        patchVideo(safeCall(aweme, "getVideo"));
+    }
+
+    static void patchVideo(Object video) {
+        if (!Config.REMOVE_DOWNLOAD_WATERMARK || video == null) return;
+        synchronized (PATCHED) {
+            if (PATCHED.containsKey(video)) return;
+            PATCHED.put(video, Boolean.TRUE);
+        }
+        try {
+            String via = "noWatermark";
+            Object clean = safeCall(video, "getDownloadNoWatermarkAddr");
+            if (clean == null) { via = "playH264"; clean = safeCall(video, "getPlayAddrH264"); }
+            if (clean == null) { via = "play"; clean = safeCall(video, "getPlayAddr"); }
+            if (!dumpedFields && Config.LOG_ENABLED) {
+                dumpedFields = true;
+                StringBuilder names = new StringBuilder();
+                for (java.lang.reflect.Field f : video.getClass().getDeclaredFields())
+                    if (f.getType().getSimpleName().contains("Url")) names.append(f.getName()).append(':')
+                            .append(f.getType().getSimpleName()).append(' ');
+                HookLog.log("TikTokRootMod: Video url fields: " + names);
+            }
+            if (clean == null) {
+                if (patchLogs++ < 3) HookLog.log("TikTokRootMod: patchVideo: no clean source for a Video");
+                return;
+            }
+            int set = 0;
+            for (String name : new String[]{"downloadAddr", "newDownloadAddr"}) {
+                try {
+                    java.lang.reflect.Field f = video.getClass().getDeclaredField(name);
+                    f.setAccessible(true);
+                    if (f.getType().isInstance(clean)) { f.set(video, clean); set++; }
+                } catch (NoSuchFieldException ignored) { }
+            }
+            if (patchLogs++ < 5)
+                HookLog.log("TikTokRootMod: patched Video download fields=" + set + " via " + via);
+        } catch (Throwable error) {
+            HookLog.log("TikTokRootMod: patchVideo failed: " + error);
+        }
+    }
+
     static void install(ClassLoader loader) {
         if (!Config.REMOVE_DOWNLOAD_WATERMARK) {
             HookLog.log("TikTokRootMod: watermark removal is OFF in settings (remove_download_watermark=false)");
@@ -76,6 +132,10 @@ final class MediaHooks {
         }
         Class<?> aweme = XposedHelpers.findClassIfExists("com.ss.android.ugc.aweme.feed.model.Aweme", loader);
         if (aweme != null) {
+            Set<?> v = XposedBridge.hookAllMethods(aweme, "getVideo", new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) { patchVideo(param.getResult()); }
+            });
+            HookLog.log("TikTokRootMod: Aweme.getVideo hooks=" + v.size());
             Set<?> c = XposedBridge.hookAllMethods(aweme, "getDownloadWithoutWatermark", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     param.setResult(true);
