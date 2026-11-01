@@ -33,6 +33,7 @@ final class FeedHooks {
     static void install(ClassLoader loader) {
         HookLog.log("TikGoon: FeedHooks resolution started; DexKit runtime="
                 + (Entry.getDexKitRuntime() == null ? "unavailable" : "available"));
+        MediaHooks.installAcl(loader);   // DexKit đã sẵn sàng: thử lại nếu lần đầu chưa tìm thấy ACLCommonShare
         Class<?> feedClass = resolveClass(FEED, loader, "feed model");
         awemeClass = resolveClass(AWEME, loader, "Aweme model");
         extClass = resolveClass(EXT, loader, "Aweme extensions");

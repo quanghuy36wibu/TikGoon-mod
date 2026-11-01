@@ -120,12 +120,75 @@ final class MediaHooks {
         }
     }
 
+
+    private static boolean aclInstalled;
+
+    /**
+     * Theo bản vá "Downloads" của Morphe (file tham khảo patches-0_8_1.mpp): lớp ACLCommonShare (quyền chia sẻ/tải
+     * của video) cần getCode()=0, getShowType()=2 và getTranscode()=1 thì TikTok tải video gốc không gắn logo.
+     * Tên lớp ACLCommonShare không bị làm rối; tìm theo đuôi tên bằng DexKit nếu không đoán đúng gói.
+     */
+    static synchronized void installAcl(ClassLoader loader) {
+        if (!Config.REMOVE_DOWNLOAD_WATERMARK || aclInstalled) return;
+        Class<?> acl = XposedHelpers.findClassIfExists("com.ss.android.ugc.aweme.feed.model.ACLCommonShare", loader);
+        if (acl == null) {
+            try {
+                dev.tiktokrootmod.dexkit.DexKitRuntime runtime = Entry.getDexKitRuntime();
+                if (runtime != null) {
+                    org.luckypray.dexkit.result.ClassDataList found = runtime.getBridge().findClass(
+                            org.luckypray.dexkit.query.FindClass.create().matcher(
+                                    new org.luckypray.dexkit.query.matchers.ClassMatcher().className(
+                                            "ACLCommonShare",
+                                            org.luckypray.dexkit.query.enums.StringMatchType.EndsWith, false)));
+                    if (found != null && !found.isEmpty()) {
+                        acl = found.get(0).getInstance(loader);
+                        HookLog.log("TikTokRootMod: ACLCommonShare tìm bằng DexKit -> "
+                                + (acl == null ? "null" : acl.getName()));
+                    } else {
+                        HookLog.log("TikTokRootMod: DexKit không thấy lớp ACLCommonShare");
+                    }
+                }
+            } catch (Throwable error) {
+                HookLog.log("TikTokRootMod: tìm ACLCommonShare lỗi: " + error);
+            }
+        } else {
+            HookLog.log("TikTokRootMod: ACLCommonShare = " + acl.getName());
+        }
+        if (acl == null) return;
+        aclInstalled = true;
+        StringBuilder all = new StringBuilder();
+        for (Method m : acl.getDeclaredMethods()) all.append(m.getName()).append('(')
+                .append(m.getParameterTypes().length).append(")->").append(m.getReturnType().getSimpleName()).append(' ');
+        HookLog.log("TikTokRootMod: ACLCommonShare methods: " + all);
+        aclReturn(acl, "getCode", 0);
+        aclReturn(acl, "getShowType", 2);
+        aclReturn(acl, "getTranscode", 1);
+    }
+
+    private static void aclReturn(Class<?> acl, String name, final int value) {
+        try {
+            Set<?> hooks = XposedBridge.hookAllMethods(acl, name, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam param) {
+                    Class<?> rt = ((Method) param.method).getReturnType();
+                    if (rt == int.class) param.setResult(Integer.valueOf(value));
+                    else if (rt == boolean.class) param.setResult(value != 0);
+                    else if (rt == long.class) param.setResult(Long.valueOf(value));
+                    fire("ACLCommonShare." + name + "=" + value);
+                }
+            });
+            HookLog.log("TikTokRootMod: ACLCommonShare." + name + " hooks=" + hooks.size() + " -> " + value);
+        } catch (Throwable error) {
+            HookLog.log("TikTokRootMod: ACLCommonShare." + name + " lỗi: " + error);
+        }
+    }
+
     static void install(ClassLoader loader) {
         if (!Config.REMOVE_DOWNLOAD_WATERMARK) {
             HookLog.log("TikTokRootMod: watermark removal is OFF in settings (remove_download_watermark=false)");
             return;
         }
         HookLog.log("TikTokRootMod: watermark removal is ON, installing media hooks");
+        installAcl(loader);
         Class<?> video = XposedHelpers.findClassIfExists("com.ss.android.ugc.aweme.feed.model.Video", loader);
         if (video != null) {
             XC_MethodHook source = new XC_MethodHook() {
