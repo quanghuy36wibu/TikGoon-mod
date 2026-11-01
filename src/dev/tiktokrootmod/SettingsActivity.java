@@ -340,10 +340,44 @@ public final class SettingsActivity extends Activity {
         section(p, "Nâng cao");
         LinearLayout adv = card(p);
         toggle(adv, "Dùng DexKit tìm hook feed", "Tắt nếu TikTok bị lỗi khi mở", "dexkit_enabled", true);
-        toggle(adv, "Ghi log debug", null, "log_enabled", false);
+        toggle(adv, "Ghi log debug", "Bật rồi khởi động lại TikTok để ghi nhật ký hook", "log_enabled", false);
+        action(adv, "Xem nhật ký hook", "Đọc nhật ký từ TikTok bằng root, có nút sao chép", this::showHookLog);
 
         LinearLayout foot = card(p);
         note(foot, "Chưa hỗ trợ tải ảnh/âm thanh/sticker, chọn chất lượng và tự gửi streak. Giao diện cần thử trên TikTok 47.0.3.");
+    }
+
+    /** Đọc tệp nhật ký hook trong thư mục files của TikTok (cần root) và hiện trong hộp thoại. */
+    private void showHookLog() {
+        new Thread(() -> {
+            String text;
+            try {
+                Process process = new ProcessBuilder("su", "-c",
+                        "tail -c 60000 /data/user/0/" + TIKTOK + "/files/tiktokrootmod_log 2>&1").start();
+                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int n;
+                try (java.io.InputStream in = process.getInputStream()) {
+                    while ((n = in.read(buffer)) > 0) out.write(buffer, 0, n);
+                }
+                process.waitFor();
+                text = out.toString("UTF-8").trim();
+            } catch (Throwable error) {
+                text = "Không đọc được nhật ký: " + error;
+            }
+            final String shown = text.isEmpty()
+                    ? "Nhật ký trống. Bật \"Ghi log debug\", khởi động lại TikTok rồi mở lại màn hình này." : text;
+            runOnUiThread(() -> dialog()
+                    .setTitle("Nhật ký hook")
+                    .setMessage(shown)
+                    .setPositiveButton("Sao chép", (d, w) -> {
+                        android.content.ClipboardManager cm =
+                                (android.content.ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                        cm.setPrimaryClip(android.content.ClipData.newPlainText("hook log", shown));
+                    })
+                    .setNegativeButton("Đóng", null)
+                    .show());
+        }, "TikGoon-ReadLog").start();
     }
 
     // ------------------------------------------------------- điều hướng dưới
