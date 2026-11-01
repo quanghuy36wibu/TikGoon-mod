@@ -42,26 +42,7 @@ final class MediaHooks {
         Class<?> selector = XposedHelpers.findClassIfExists("X.0ztG", loader);
         if (selector != null) {
             try {
-                Class<?> awemeType = XposedHelpers.findClass(
-                        "com.ss.android.ugc.aweme.feed.model.Aweme", loader);
-                XposedHelpers.findAndHookMethod(selector, "LIZIZ", awemeType, new XC_MethodHook() {
-                    @Override protected void afterHookedMethod(MethodHookParam param) {
-                        try {
-                            Object awemeObject = param.args[0];
-                            Object videoObject = XposedHelpers.callMethod(awemeObject, "getVideo");
-                            if (videoObject == null) return;
-                            Object clean = XposedHelpers.callMethod(videoObject, "getDownloadNoWatermarkAddr");
-                            if (clean == null) clean = XposedHelpers.callMethod(videoObject, "getPlayAddrH264");
-                            if (clean == null) return;
-                            XposedHelpers.setObjectField(param.thisObject, "LIZ", clean);
-                            XposedHelpers.setBooleanField(param.thisObject, "LIZJ", false);
-                            fire("selector X.0ztG.LIZIZ");
-                        } catch (Throwable error) {
-                            HookLog.log("TikTokRootMod: clean source selection failed: " + error);
-                        }
-                    }
-                });
-                HookLog.log("TikTokRootMod: hooked download source selector X.0ztG.LIZIZ");
+                installSelector(selector, loader);
             } catch (Throwable error) { HookLog.log("TikTokRootMod: download selector hook failed: " + error); }
         } else {
             HookLog.log("TikTokRootMod: MISSING class X.0ztG (tên bị làm rối, đổi theo từng bản TikTok)");
@@ -112,5 +93,57 @@ final class MediaHooks {
                         .append(")->").append(method.getReturnType().getSimpleName()).append(" ");
             HookLog.log("TikTokRootMod: NO WaterMarkAbilityProtocol method found; methods: " + names);
         }
+    }
+
+    /**
+     * Bộ chọn nguồn tải: tên hàm LIZIZ và trường LIZ/LIZJ bị làm rối nên đổi theo bản TikTok.
+     * Tìm theo kiểu thay vì theo tên: hàm có đúng 1 tham số là Aweme; trường cùng kiểu với địa chỉ sạch.
+     */
+    private static void installSelector(Class<?> selector, ClassLoader loader) throws Throwable {
+        final Class<?> awemeType = XposedHelpers.findClass("com.ss.android.ugc.aweme.feed.model.Aweme", loader);
+        StringBuilder dump = new StringBuilder("X.0ztG members: ");
+        for (Method m : selector.getDeclaredMethods()) {
+            dump.append(m.getName()).append("(");
+            for (Class<?> t : m.getParameterTypes()) dump.append(t.getSimpleName()).append(",");
+            dump.append(")->").append(m.getReturnType().getSimpleName()).append(" ");
+        }
+        for (java.lang.reflect.Field f : selector.getDeclaredFields())
+            dump.append("[").append(f.getName()).append(":").append(f.getType().getSimpleName()).append("] ");
+        HookLog.log("TikTokRootMod: " + dump);
+
+        int hooked = 0;
+        for (Method method : selector.getDeclaredMethods()) {
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != 1 || params[0] != awemeType) continue;
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override protected void afterHookedMethod(MethodHookParam param) {
+                    try {
+                        Object videoObject = XposedHelpers.callMethod(param.args[0], "getVideo");
+                        if (videoObject == null) return;
+                        Object clean = XposedHelpers.callMethod(videoObject, "getDownloadNoWatermarkAddr");
+                        if (clean == null) clean = XposedHelpers.callMethod(videoObject, "getPlayAddrH264");
+                        if (clean == null) return;
+                        int set = 0;
+                        for (java.lang.reflect.Field f : param.thisObject.getClass().getDeclaredFields()) {
+                            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                            f.setAccessible(true);
+                            if (f.getType().isInstance(clean) && f.getType() != Object.class) {
+                                f.set(param.thisObject, clean);
+                                set++;
+                            } else if (f.getType() == boolean.class && "LIZJ".equals(f.getName())) {
+                                f.setBoolean(param.thisObject, false);
+                            }
+                        }
+                        fire("selector " + param.method.getName() + " fields set=" + set
+                                + " type=" + clean.getClass().getSimpleName());
+                    } catch (Throwable error) {
+                        HookLog.log("TikTokRootMod: clean source selection failed: " + error);
+                    }
+                }
+            });
+            hooked++;
+            HookLog.log("TikTokRootMod: hooked download selector " + method.getName());
+        }
+        if (hooked == 0) HookLog.log("TikTokRootMod: no Aweme-taking method in X.0ztG");
     }
 }
