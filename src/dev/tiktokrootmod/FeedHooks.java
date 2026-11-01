@@ -477,7 +477,20 @@ final class FeedHooks {
                 catch (Throwable ignored) { }
             }
         }
-        List<?> result = filterInner(input);
+        List<?> result;
+        try {
+            result = filterInner(input);
+        } catch (Throwable error) {
+            HookLog.log("TikTokRootMod: feed filter error, giữ nguyên danh sách: " + error);
+            return input;
+        }
+        // An toàn: nếu gần hết danh sách sẽ bị ẩn (vd. màn xem series/nội dung trả phí chỉ có mục trả phí),
+        // TikTok thường truy cập theo chỉ số trên danh sách gốc và có thể crash -> giữ nguyên danh sách.
+        if (input.size() > 1 && result.size() * 2 < input.size()) {
+            HookLog.log("TikTokRootMod: feed filter bỏ qua (sẽ ẩn " + (input.size() - result.size())
+                    + "/" + input.size() + " mục) để tránh crash");
+            return input;
+        }
         if (filterCalls++ < 25 || result.size() != input.size())
             HookLog.log("TikTokRootMod: feed filter called: in=" + input.size() + " out=" + result.size()
                     + " (đã ẩn " + hiddenTotal + " mục từ đầu phiên)");
