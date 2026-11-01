@@ -33,6 +33,7 @@ final class FeedHooks {
     static void install(ClassLoader loader) {
         HookLog.log("TikGoon: FeedHooks resolution started; DexKit runtime="
                 + (Entry.getDexKitRuntime() == null ? "unavailable" : "available"));
+        InteractionHooks.installWithDexKit(loader);
         MediaHooks.installAcl(loader);   // DexKit đã sẵn sàng: thử lại nếu lần đầu chưa tìm thấy ACLCommonShare
         Class<?> feedClass = resolveClass(FEED, loader, "feed model");
         awemeClass = resolveClass(AWEME, loader, "Aweme model");
@@ -600,6 +601,7 @@ final class FeedHooks {
             if (Config.HIDE_LIVES && isLive(item)) return "live";
             if (Config.HIDE_PHOTOS && isPhotoPost(item)) return "photo";
             if (Config.HIDE_SHOP && isShop(item)) return "shop";
+            if (Config.HIDE_AI && isAiContent(item)) return "ai:" + aiDescribe(item);
             if (Config.HIDE_STORIES) {
                 if (Boolean.TRUE.equals(call(item, "getIsTikTokStory"))) return "story:getIsTikTokStory=true";
                 Object v = call(item, "getStory");
@@ -649,6 +651,10 @@ final class FeedHooks {
         }
 
         if (Config.HIDE_SHOP && isShop(item)) {
+            return true;
+        }
+
+        if (Config.HIDE_AI && isAiContent(item)) {
             return true;
         }
 
@@ -750,6 +756,51 @@ final class FeedHooks {
         }
         return call(item, "getPhotoModeImageInfo") != null
                 || call(item, "getPhotoModeTextInfo") != null;
+    }
+
+    private static int aiLogs;
+
+    /**
+     * Nội dung AI, theo AiContentFilter + AiContentClassifier của Morphe:
+     *  - AIGCInfo.getAIGCLabelType(): 1 hoặc 2 => nội dung AI; 0 => không; giá trị khác không tính
+     *  - AIGCInfo.createByAI == true => tạo bằng AI
+     *  - ModerationAigcInfo.moderationAigcLabelType > 0 => bị kiểm duyệt gắn nhãn AI
+     * Chỉ ẩn khi một trong ba điều kiện trên đúng.
+     */
+    private static boolean isAiContent(Object item) {
+        int[] v = aiRead(item);
+        boolean hide = v[0] == 1 || v[0] == 2 || v[1] != 0 || v[2] > 0;
+        if (hide && Config.LOG_ENABLED && aiLogs++ < 5)
+            HookLog.log("TikTokRootMod: nội dung AI: labelType=" + v[0] + " createByAI=" + v[1]
+                    + " moderationLabel=" + v[2]);
+        return hide;
+    }
+
+    private static String aiDescribe(Object item) {
+        int[] v = aiRead(item);
+        return "label=" + v[0] + ",createByAI=" + v[1] + ",moderation=" + v[2];
+    }
+
+    /** [labelType, createByAI(0/1), moderationLabelType]; mọi lỗi đọc đều coi là 0. */
+    private static int[] aiRead(Object item) {
+        int[] out = new int[3];
+        try {
+            Object aigc = call(item, "getAigcInfo");
+            if (aigc != null) {
+                out[0] = (int) longValue(call(aigc, "getAIGCLabelType"));
+                Object created = field(aigc, "createByAI");
+                if (created == null) created = call(aigc, "getCreateByAI");
+                if (created == null) created = call(aigc, "isCreateByAI");
+                out[1] = Boolean.TRUE.equals(created) ? 1 : 0;
+            }
+            Object moderation = call(item, "getModerationAigcInfo");
+            if (moderation != null) {
+                Object label = field(moderation, "moderationAigcLabelType");
+                if (label == null) label = call(moderation, "getModerationAigcLabelType");
+                out[2] = (int) longValue(label);
+            }
+        } catch (Throwable ignored) { }
+        return out;
     }
 
     /** Video bán hàng / TikTok Shop (ShopFilter của Morphe): đường dẫn chia sẻ chứa placeholder_product_id. */

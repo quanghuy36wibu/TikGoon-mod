@@ -191,6 +191,7 @@ public final class SettingsActivity extends Activity {
         toggle(feed, "Ẩn bài ảnh", null, "hide_photos", false);
         toggle(feed, "Ẩn story", null, "hide_stories", false);
         toggle(feed, "Ẩn video bán hàng (TikTok Shop)", "Theo bộ lọc Shop của Morphe", "hide_shop", false);
+        toggle(feed, "Ẩn nội dung AI", "Nhãn AI, tạo bằng AI hoặc bị gắn nhãn kiểm duyệt (theo Morphe)", "hide_ai", false);
         toggle(feed, "Ẩn mini-series", null, "hide_series", false);
         toggle(feed, "Ẩn nội dung trả phí", null, "hide_paid", false);
         toggle(feed, "Ẩn banner khuyến mãi", null, "hide_promo", true);
@@ -209,6 +210,8 @@ public final class SettingsActivity extends Activity {
         section(p, "Phát video");
         LinearLayout playback = card(p);
         toggle(playback, "Chặn video tự lặp lại", null, "stop_loop", false);
+        toggle(playback, "Luôn hiện ngày đăng (thử nghiệm)", "Hiện ngày đăng ở feed chính; xem nhật ký nếu chưa có tác dụng", "always_show_publish_date", false);
+        toggle(playback, "Ẩn phản ứng nhanh ở bình luận (thử nghiệm)", "Ẩn hàng emoji phản ứng nhanh; xem nhật ký nếu chưa có tác dụng", "hide_quick_reactions", false);
         slider(playback, "Tốc độ mặc định (0 = tắt)", "default_speed", 0, 300);
         note(playback, "100% là tốc độ bình thường. Cần khởi động lại TikTok để áp dụng.");
 
@@ -1357,7 +1360,7 @@ public final class SettingsActivity extends Activity {
     private String encodedSettings() throws Exception {
         JSONObject values = new JSONObject();
         for (String key : new String[]{"hide_ads", "hide_lives", "hide_photos", "hide_stories",
-                "hide_series", "hide_shop", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
+                "hide_series", "hide_shop", "hide_ai", "always_show_publish_date", "hide_quick_reactions", "hide_paid", "clean_links", "spoof_region", "allow_screenshots",
                 "profile_background", "always_show_seekbar", "minimal_ui", "anti_burnout",
                 "remove_download_watermark", "unlimited_share_recipients", "unlimited_pinned_chats",
                 "disable_live_auto_translate", "theme_rainbow",

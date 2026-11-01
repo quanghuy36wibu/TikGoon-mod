@@ -60,6 +60,7 @@ public final class Entry implements IXposedHookLoadPackage {
                         ok &= step("video", () -> VideoHooks.install(param.classLoader));
                         ok &= step("media", () -> MediaHooks.install(param.classLoader));
                         ok &= step("message", () -> MessageHooks.install(param.classLoader));
+                        ok &= step("interaction", () -> InteractionHooks.install(param.classLoader));
                         ok &= step("appearance", AppearanceHooks::install);
                         ok &= step("theme", ThemeHooks::install);
                         if (Config.HIDE_PROMO) ok &= step("promo", PromoHooks::install);

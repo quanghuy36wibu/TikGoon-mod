@@ -45,6 +45,9 @@ public final class Config {
     public static long MAX_LIKES = 0;   // 0 = tắt (theo bộ lọc LikeCountFilter của Morphe)
     public static long MAX_VIEWS = 0;   // 0 = tắt
     public static boolean HIDE_SHOP = false;
+    public static boolean HIDE_AI = false;
+    public static boolean ALWAYS_SHOW_PUBLISH_DATE = false;
+    public static boolean HIDE_QUICK_REACTIONS = false;
     public static long MIN_PUBLISH_TIME_SECONDS = 0;
     public static String FILTER_WORDS = "";
 
@@ -106,6 +109,9 @@ public final class Config {
             MAX_LIKES = Math.max(0, values.optLong("max_likes", MAX_LIKES));
             MAX_VIEWS = Math.max(0, values.optLong("max_views", MAX_VIEWS));
             HIDE_SHOP = values.optBoolean("hide_shop", HIDE_SHOP);
+            HIDE_AI = values.optBoolean("hide_ai", HIDE_AI);
+            ALWAYS_SHOW_PUBLISH_DATE = values.optBoolean("always_show_publish_date", ALWAYS_SHOW_PUBLISH_DATE);
+            HIDE_QUICK_REACTIONS = values.optBoolean("hide_quick_reactions", HIDE_QUICK_REACTIONS);
             MIN_PUBLISH_TIME_SECONDS = Math.max(0, values.optLong("min_publish_time", MIN_PUBLISH_TIME_SECONDS));
             FILTER_WORDS = values.optString("filter_words", FILTER_WORDS);
             LOG_ENABLED = values.optBoolean("log_enabled", LOG_ENABLED);
