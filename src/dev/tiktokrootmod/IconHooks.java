@@ -34,9 +34,9 @@ final class IconHooks {
             XposedBridge.hookAllMethods(provider, "getActivityIcon", replacement);
             XposedBridge.hookAllMethods(provider, "getRawIcon", replacement);
             XposedBridge.hookAllMethods(provider, "getCustomizedIcon", replacement);
-            XposedBridge.log("TikTokRootMod: MIUI Home TikTok icon hook enabled");
+            HookLog.log("TikTokRootMod: MIUI Home TikTok icon hook enabled");
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: MIUI Home icon hook: " + error);
+            HookLog.log("TikTokRootMod: MIUI Home icon hook: " + error);
         }
     }
 

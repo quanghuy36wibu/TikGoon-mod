@@ -67,7 +67,7 @@ public final class Config {
         try {
             String encoded = Settings.Global.getString(context.getContentResolver(), SYSTEM_KEY);
             if (encoded == null || encoded.isEmpty()) {
-                XposedBridge.log("TikTokRootMod: no saved settings; using defaults");
+                HookLog.log("TikTokRootMod: no saved settings; using defaults");
                 return;
             }
             JSONObject values = new JSONObject(new String(Base64.decode(encoded, Base64.DEFAULT), "UTF-8"));
@@ -118,9 +118,9 @@ public final class Config {
             THEME_LIGHT = values.optBoolean("theme_light", THEME_LIGHT);
             COMMENT_SCRIM = values.optBoolean("comment_scrim", COMMENT_SCRIM);
             COMMENT_SCRIM_OPACITY = Math.max(0, Math.min(100, values.optInt("comment_scrim_opacity", COMMENT_SCRIM_OPACITY)));
-            XposedBridge.log("TikTokRootMod: settings loaded via Android Global Settings");
+            HookLog.log("TikTokRootMod: settings loaded via Android Global Settings");
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: settings unavailable; using defaults: " + error);
+            HookLog.log("TikTokRootMod: settings unavailable; using defaults: " + error);
         }
     }
 }

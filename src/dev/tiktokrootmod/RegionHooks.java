@@ -32,7 +32,7 @@ final class RegionHooks {
                 }
             });
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: region hook skipped " + name + ": " + error);
+            HookLog.log("TikTokRootMod: region hook skipped " + name + ": " + error);
         }
     }
 }

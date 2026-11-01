@@ -25,16 +25,16 @@ final class ProfileBackgroundHooks {
                             String key = (String) param.args[2];
                             if ("profile_bg_in_allow_list".equals(key)) {
                                 param.setResult(1);
-                                XposedBridge.log("TikTokRootMod: profile background allow-list gate opened");
+                                HookLog.log("TikTokRootMod: profile background allow-list gate opened");
                             } else if ("profile_bg_enable_consumption_group".equals(key)) {
                                 param.setResult(3);
-                                XposedBridge.log("TikTokRootMod: profile background UI gate opened");
+                                HookLog.log("TikTokRootMod: profile background UI gate opened");
                             }
                         }
                     });
-            XposedBridge.log("TikTokRootMod: hooked profile background gate in X.032Z");
+            HookLog.log("TikTokRootMod: hooked profile background gate in X.032Z");
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: direct profile background gate unavailable: " + error);
+            HookLog.log("TikTokRootMod: direct profile background gate unavailable: " + error);
         }
         int count = 0;
         for (String name : SETTINGS_CLASSES) {
@@ -67,10 +67,10 @@ final class ProfileBackgroundHooks {
                     });
                     count++;
                 } catch (Throwable error) {
-                    XposedBridge.log("TikTokRootMod: profile background hook skipped: " + error);
+                    HookLog.log("TikTokRootMod: profile background hook skipped: " + error);
                 }
             }
         }
-        XposedBridge.log("TikTokRootMod: profile background setting methods hooked: " + count);
+        HookLog.log("TikTokRootMod: profile background setting methods hooked: " + count);
     }
 }

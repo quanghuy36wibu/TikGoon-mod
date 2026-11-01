@@ -20,7 +20,7 @@ final class MessageHooks {
                                 if ("forward_limit".equals(param.args[0])) param.setResult(1000);
                             }
                         });
-            } catch (Throwable error) { XposedBridge.log("TikTokRootMod: recipient bundle hook: " + error); }
+            } catch (Throwable error) { HookLog.log("TikTokRootMod: recipient bundle hook: " + error); }
             Class<?> type = XposedHelpers.findClassIfExists(
                     "com.ss.android.ugc.aweme.im.sharepanel.api.experiment.ForwardLimitSetting", loader);
             if (type != null) for (Method method : type.getDeclaredMethods()) {
@@ -30,7 +30,7 @@ final class MessageHooks {
                     XposedBridge.hookMethod(method, new XC_MethodHook() {
                         @Override protected void afterHookedMethod(MethodHookParam param) { param.setResult(1000); }
                     });
-                } catch (Throwable error) { XposedBridge.log("TikTokRootMod: recipient limit: " + error); }
+                } catch (Throwable error) { HookLog.log("TikTokRootMod: recipient limit: " + error); }
             }
         }
         if (Config.UNLIMITED_PINNED_CHATS) {
@@ -43,7 +43,7 @@ final class MessageHooks {
                     XposedBridge.hookMethod(method, new XC_MethodHook() {
                         @Override protected void beforeHookedMethod(MethodHookParam param) { param.setResult(false); }
                     });
-                } catch (Throwable error) { XposedBridge.log("TikTokRootMod: pinned chat guard: " + error); }
+                } catch (Throwable error) { HookLog.log("TikTokRootMod: pinned chat guard: " + error); }
             }
         }
     }

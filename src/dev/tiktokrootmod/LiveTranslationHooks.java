@@ -19,10 +19,10 @@ final class LiveTranslationHooks {
                         param.setResult(false);
                     }
                 });
-                XposedBridge.log("TikTokRootMod: LIVE auto-translation default disabled");
+                HookLog.log("TikTokRootMod: LIVE auto-translation default disabled");
             }
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: LIVE translation setting hook: " + error);
+            HookLog.log("TikTokRootMod: LIVE translation setting hook: " + error);
         }
         try {
             // TikTok 47.0.3 public-screen controller. This method gates auto translation
@@ -34,10 +34,10 @@ final class LiveTranslationHooks {
                         param.setResult(false);
                     }
                 });
-                XposedBridge.log("TikTokRootMod: LIVE auto-translation gate disabled");
+                HookLog.log("TikTokRootMod: LIVE auto-translation gate disabled");
             }
         } catch (Throwable error) {
-            XposedBridge.log("TikTokRootMod: LIVE translation gate hook: " + error);
+            HookLog.log("TikTokRootMod: LIVE translation gate hook: " + error);
         }
     }
 }

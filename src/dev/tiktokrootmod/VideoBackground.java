@@ -52,7 +52,7 @@ final class VideoBackground {
             private MediaPlayer player;
             @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
                 try {
-                    XposedBridge.log("TikTokRootMod: theme video surface ready " + width + "x" + height);
+                    HookLog.log("TikTokRootMod: theme video surface ready " + width + "x" + height);
                     player = new MediaPlayer();
                     state.player = player;
                     try (FileInputStream input = new FileInputStream(VIDEO_PATH)) {
@@ -63,14 +63,14 @@ final class VideoBackground {
                     surface.release();
                     player.setLooping(true);
                     player.setVolume(0f, 0f);
-                    player.setOnPreparedListener(media -> { XposedBridge.log("TikTokRootMod: theme video prepared"); media.start(); });
+                    player.setOnPreparedListener(media -> { HookLog.log("TikTokRootMod: theme video prepared"); media.start(); });
                     player.setOnErrorListener((media, what, extra) -> {
-                        XposedBridge.log("TikTokRootMod: theme video playback error " + what + "/" + extra);
+                        HookLog.log("TikTokRootMod: theme video playback error " + what + "/" + extra);
                         return true;
                     });
                     player.prepareAsync();
                 } catch (Throwable error) {
-                    XposedBridge.log("TikTokRootMod: theme video setup: " + error);
+                    HookLog.log("TikTokRootMod: theme video setup: " + error);
                     release();
                 }
             }
@@ -108,7 +108,7 @@ final class VideoBackground {
                 });
             }
         }
-        XposedBridge.log("TikTokRootMod: looping background video attached");
+        HookLog.log("TikTokRootMod: looping background video attached");
     }
 
     private static final class State {

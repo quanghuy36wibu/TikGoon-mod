@@ -42,6 +42,7 @@ public final class Entry implements IXposedHookLoadPackage {
                     try {
                         Config.load((Context) hook.args[0]);
                         HookLog.init((Context) hook.args[0]);
+                        dumpConfig();
                         boolean ok = true;
                         if (Config.DEXKIT_ENABLED) {
                             // FeedHooks must not race DexKit initialization. Install feed hooks
@@ -82,6 +83,24 @@ public final class Entry implements IXposedHookLoadPackage {
             HookLog.log("TikTokRootMod: hook setup failed");
             HookLog.log(error);
         }
+    }
+
+    /** Ghi toàn bộ cấu hình đã đọc được vào nhật ký, để biết công tắc nào TikTok thật sự nhận. */
+    private static void dumpConfig() {
+        if (!Config.LOG_ENABLED) return;
+        StringBuilder out = new StringBuilder("config loaded: ");
+        for (java.lang.reflect.Field field : Config.class.getDeclaredFields()) {
+            int mod = field.getModifiers();
+            if (!java.lang.reflect.Modifier.isStatic(mod) || !java.lang.reflect.Modifier.isPublic(mod)) continue;
+            try {
+                Object value = field.get(null);
+                if (value instanceof Boolean) { if ((Boolean) value) out.append(field.getName()).append("=ON "); }
+                else if (value instanceof Number) out.append(field.getName()).append("=").append(value).append(" ");
+                else if (value instanceof String && !((String) value).isEmpty())
+                    out.append(field.getName()).append("=").append(value).append(" ");
+            } catch (Throwable ignored) { }
+        }
+        HookLog.log("TikTokRootMod: " + out + "(chỉ liệt kê công tắc đang BẬT)");
     }
 
     /** DexKit phân tích cả APK TikTok (rất nặng) nên chạy ở luồng nền, ưu tiên thấp, không chặn lúc mở app. */

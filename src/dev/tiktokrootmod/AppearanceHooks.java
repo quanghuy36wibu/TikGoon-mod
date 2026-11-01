@@ -45,7 +45,7 @@ final class AppearanceHooks {
                         param.args[0] = View.GONE;
                         if (!loggedMinimal) {
                             loggedMinimal = true;
-                            XposedBridge.log("TikTokRootMod: minimal feed overlay applied");
+                            HookLog.log("TikTokRootMod: minimal feed overlay applied");
                         }
                     }
                 }
@@ -59,7 +59,7 @@ final class AppearanceHooks {
                             param.args[0] = 0.35f;
                             if (!loggedDim) {
                                 loggedDim = true;
-                                XposedBridge.log("TikTokRootMod: anti-burnout opacity applied");
+                                HookLog.log("TikTokRootMod: anti-burnout opacity applied");
                             }
                         }
                     }
@@ -75,12 +75,12 @@ final class AppearanceHooks {
                 if (fontFile.exists() && fontFile.isFile()) {
                     try {
                         loaded = Typeface.createFromFile(fontFile);
-                        XposedBridge.log("TikTokRootMod: custom font loaded: " + Config.FONT_FILE);
+                        HookLog.log("TikTokRootMod: custom font loaded: " + Config.FONT_FILE);
                     } catch (Exception e) {
-                        XposedBridge.log("TikTokRootMod: failed to load font: " + e.getMessage());
+                        HookLog.log("TikTokRootMod: failed to load font: " + e.getMessage());
                     }
                 } else {
-                    XposedBridge.log("TikTokRootMod: font file not found: " + Config.FONT_FILE);
+                    HookLog.log("TikTokRootMod: font file not found: " + Config.FONT_FILE);
                 }
                 face = loaded != null ? loaded : Typeface.DEFAULT;
             } else {

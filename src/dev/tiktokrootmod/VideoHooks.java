@@ -31,7 +31,7 @@ final class VideoHooks {
                     param.args[0] = 1f;
                     if (!loggedFade) {
                         loggedFade = true;
-                        XposedBridge.log("TikTokRootMod: blocked seekbar alpha fade");
+                        HookLog.log("TikTokRootMod: blocked seekbar alpha fade");
                     }
                 }
             }
@@ -45,7 +45,7 @@ final class VideoHooks {
                 }
             }
         });
-        XposedBridge.log("TikTokRootMod: hooked video_seek_bar view visibility");
+        HookLog.log("TikTokRootMod: hooked video_seek_bar view visibility");
         Class<?> mainPageSeek = XposedHelpers.findClassIfExists(
                 "com.bytedance.tiktok.homepage.mainpagefragment.assem.MainPageSeekAssem", loader);
         if (mainPageSeek != null) {
@@ -53,8 +53,8 @@ final class VideoHooks {
                 XposedHelpers.findAndHookMethod(mainPageSeek, "Ax1", boolean.class, new XC_MethodHook() {
                     @Override protected void beforeHookedMethod(MethodHookParam param) { param.args[0] = false; }
                 });
-                XposedBridge.log("TikTokRootMod: hooked MainPageSeekAssem hideSeekBar");
-            } catch (Throwable error) { XposedBridge.log("TikTokRootMod: main seekbar controller: " + error); }
+                HookLog.log("TikTokRootMod: hooked MainPageSeekAssem hideSeekBar");
+            } catch (Throwable error) { HookLog.log("TikTokRootMod: main seekbar controller: " + error); }
         }
         Class<?> seekDelegate = XposedHelpers.findClassIfExists("X.06nm", loader);
         if (seekDelegate != null) {
@@ -64,8 +64,8 @@ final class VideoHooks {
                         param.setResult(null); // TikTok animates the seekbar alpha to zero here.
                     }
                 });
-                XposedBridge.log("TikTokRootMod: blocked seekbar fade-out");
-            } catch (Throwable error) { XposedBridge.log("TikTokRootMod: seekbar fade-out: " + error); }
+                HookLog.log("TikTokRootMod: blocked seekbar fade-out");
+            } catch (Throwable error) { HookLog.log("TikTokRootMod: seekbar fade-out: " + error); }
         }
         if (seekView != null) {
             try {
@@ -76,14 +76,14 @@ final class VideoHooks {
                                 if (mode == 3 || mode == 4) param.args[0] = 0;
                             }
                         });
-                XposedBridge.log("TikTokRootMod: hooked actual seekbar show type");
-            } catch (Throwable error) { XposedBridge.log("TikTokRootMod: seekbar show type: " + error); }
+                HookLog.log("TikTokRootMod: hooked actual seekbar show type");
+            } catch (Throwable error) { HookLog.log("TikTokRootMod: seekbar show type: " + error); }
             XposedBridge.hookAllMethods(seekView, "onAttachedToWindow", new XC_MethodHook() {
                 @Override protected void afterHookedMethod(MethodHookParam param) {
                     View view = (View) param.thisObject;
                     view.setAlpha(1f);
                     try { XposedHelpers.callMethod(view, "setSeekBarShowType", 0); }
-                    catch (Throwable error) { XposedBridge.log("TikTokRootMod: initial seekbar mode: " + error); }
+                    catch (Throwable error) { HookLog.log("TikTokRootMod: initial seekbar mode: " + error); }
                 }
             });
         }
@@ -99,9 +99,9 @@ final class VideoHooks {
                         @Override protected void afterHookedMethod(MethodHookParam param) { param.setResult(true); }
                     });
                     hooked++;
-                } catch (Throwable error) { XposedBridge.log("TikTokRootMod: seekbar gate: " + error); }
+                } catch (Throwable error) { HookLog.log("TikTokRootMod: seekbar gate: " + error); }
             }
-            XposedBridge.log("TikTokRootMod: seekbar gates: " + hooked);
+            HookLog.log("TikTokRootMod: seekbar gates: " + hooked);
         }
         Class<?> wrapper = XposedHelpers.findClassIfExists("X.06hm", loader);
         if (wrapper != null) {

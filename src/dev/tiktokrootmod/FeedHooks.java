@@ -449,7 +449,7 @@ final class FeedHooks {
                     .hookAllMethods(type, name, callback)
                     .isEmpty()) {
 
-                XposedBridge.log(
+                HookLog.log(
                         "TikTokRootMod: hooked "
                                 + type.getSimpleName()
                                 + "."
@@ -457,7 +457,7 @@ final class FeedHooks {
                 );
             }
         } catch (Throwable error) {
-            XposedBridge.log(
+            HookLog.log(
                     "TikTokRootMod: skipped "
                             + name
                             + ": "
@@ -466,7 +466,17 @@ final class FeedHooks {
         }
     }
 
+    private static int filterCalls, hiddenTotal;
+
     private static List<?> filter(List<?> input) {
+        List<?> result = filterInner(input);
+        if (filterCalls++ < 25 || result.size() != input.size())
+            HookLog.log("TikTokRootMod: feed filter called: in=" + input.size() + " out=" + result.size()
+                    + " (đã ẩn " + hiddenTotal + " mục từ đầu phiên)");
+        return result;
+    }
+
+    private static List<?> filterInner(List<?> input) {
         if (input.isEmpty()) {
             return input;
         }
@@ -515,6 +525,12 @@ final class FeedHooks {
     }
 
     private static boolean shouldHide(Object item) {
+        boolean hide = shouldHideInner(item);
+        if (hide) hiddenTotal++;
+        return hide;
+    }
+
+    private static boolean shouldHideInner(Object item) {
 
         if (item == null ||
                 !awemeClass.isInstance(item)) {
@@ -530,7 +546,7 @@ final class FeedHooks {
             if (!loggedLiveFilter) {
                 loggedLiveFilter = true;
 
-                XposedBridge.log(
+                HookLog.log(
                         "TikTokRootMod: filtered a LIVE feed item"
                 );
             }
