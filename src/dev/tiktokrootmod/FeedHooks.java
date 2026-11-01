@@ -497,10 +497,43 @@ final class FeedHooks {
         return result;
     }
 
+    /** Bộ lọc "mềm" (mini-series, trả phí): chỉ áp dụng cho feed chính, không áp cho màn series/trả phí. */
+    private static final ThreadLocal<Boolean> SKIP_SOFT = new ThreadLocal<Boolean>() {
+        @Override protected Boolean initialValue() { return Boolean.FALSE; }
+    };
+
+    private static boolean isSoftHidden(Object item) {
+        if (item == null || awemeClass == null || !awemeClass.isInstance(item)) return false;
+        if (Config.HIDE_SERIES && call(item, "getMixInfo") != null) return true;
+        return Config.HIDE_PAID && isPaid(item);
+    }
+
     private static List<?> filterInner(List<?> input) {
         if (input.isEmpty()) {
             return input;
         }
+
+        // Nếu từ 1/4 danh sách trở lên là series/trả phí (hoặc danh sách quá ngắn) thì đây
+        // nhiều khả năng là màn series/trả phí: không lọc mềm để tránh màn hình trắng/crash.
+        int soft = 0;
+        if (Config.HIDE_SERIES || Config.HIDE_PAID) {
+            for (Object it : input) {
+                try { if (isSoftHidden(it)) soft++; } catch (Throwable ignored) { }
+            }
+        }
+        boolean skip = soft > 0 && (input.size() < 4 || soft * 4 >= input.size());
+        if (skip) {
+            HookLog.log("TikTokRootMod: bỏ qua lọc series/trả phí (" + soft + "/" + input.size() + ")");
+        }
+        SKIP_SOFT.set(skip);
+        try {
+            return filterCore(input);
+        } finally {
+            SKIP_SOFT.set(Boolean.FALSE);
+        }
+    }
+
+    private static List<?> filterCore(List<?> input) {
 
         ArrayList<Object> output = null;
 
@@ -632,12 +665,7 @@ final class FeedHooks {
             return true;
         }
 
-        if (Config.HIDE_SERIES &&
-                call(item, "getMixInfo") != null) {
-            return true;
-        }
-
-        if (Config.HIDE_PAID && isPaid(item)) {
+        if (!SKIP_SOFT.get() && isSoftHidden(item)) {
             return true;
         }
 
